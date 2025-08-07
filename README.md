@@ -264,7 +264,8 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Maybe (no promises) Roadmap
 
 - ✅ ~~Improve terrain Generation~~ - **COMPLETED in v2.0**
-- [ ] Random Encounter system
+- [ ] No more pop ups
+- [ ]  Random Encounter system
 - [ ] Weather effects on travel
 - [ ] NPC settlements and trading
 - [ ] Multiplayer (DM/Player) support
