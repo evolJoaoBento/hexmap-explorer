@@ -242,16 +242,14 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Ollama Documentation](https://github.com/ollama/ollama)
 - [Hex Grid Math](https://www.redblobgames.com/grids/hexagons/)
 
-## Roadmap
+## Maybe (no promises) Roadmap
 
-- [ ] Encounter system with combat
+- [ ] Improve terrain Generation
+- [ ] Random Encounter system
 - [ ] Weather effects on travel
 - [ ] NPC settlements and trading
-- [ ] Quest system
-- [ ] Multiplayer support
-- [ ] Mobile companion app
+- [ ] Multiplayer (DM/Player) support
 - [ ] Custom terrain editor
-- [ ] Mod support
 
 ---
 
