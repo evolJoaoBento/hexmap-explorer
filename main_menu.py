@@ -1,11 +1,13 @@
 import pygame
 import sys
 import json
-import subprocess
 import os
 import random
 import math
 import textwrap
+from PIL import Image
+import numpy as np
+from stable_map_generator import StableMapGenerator
 
 class MainMenu:
     """Main menu for Hex Map Explorer - Adapted for modular structure"""
@@ -305,6 +307,57 @@ class MainMenu:
             pygame.display.flip()
             self.clock.tick(60)
 
+    def show_text_input(self, title, prompt, initial=""):
+        """Prompt the user for text input within the window"""
+        text = initial
+        pygame.key.start_text_input()
+        try:
+            while True:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.quit_game()
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            return None
+                        elif event.key == pygame.K_RETURN:
+                            return text.strip()
+                        elif event.key == pygame.K_BACKSPACE:
+                            text = text[:-1]
+                        elif event.unicode.isprintable():
+                            text += event.unicode
+
+                self.draw_background()
+                title_surf = self.subtitle_font.render(title, True, self.title_color)
+                self.screen.blit(title_surf,
+                                 title_surf.get_rect(center=(self.width // 2,
+                                                             self.height * 0.2)))
+
+                prompt_surf = self.button_font.render(prompt, True, self.button_text)
+                self.screen.blit(prompt_surf,
+                                 prompt_surf.get_rect(center=(self.width // 2,
+                                                              self.height * 0.35)))
+
+                box = pygame.Rect(self.width * 0.2,
+                                   self.height * 0.45,
+                                   self.width * 0.6,
+                                   self.button_font.get_height() * 1.6)
+                pygame.draw.rect(self.screen, self.button_color, box)
+                pygame.draw.rect(self.screen, self.title_color, box, 2)
+                input_surf = self.button_font.render(text, True, self.title_color)
+                self.screen.blit(input_surf,
+                                 input_surf.get_rect(center=box.center))
+
+                hint = self.version_font.render(
+                    "Enter to confirm, Esc to cancel", True, self.desc_color)
+                self.screen.blit(hint,
+                                 hint.get_rect(center=(self.width // 2,
+                                                       self.height * 0.8)))
+
+                pygame.display.flip()
+                self.clock.tick(60)
+        finally:
+            pygame.key.stop_text_input()
+
     def show_file_browser(self, title, files):
         """Simple file selector within the window"""
         index = 0
@@ -345,6 +398,52 @@ class MainMenu:
 
             pygame.display.flip()
             self.clock.tick(60)
+
+    def convert_image_to_hex_map(self, image_path, width_miles, height_miles, hex_size):
+        """Convert an image to hex map data using basic color analysis"""
+        try:
+            image = Image.open(image_path).convert("RGB")
+        except Exception as e:
+            self.show_message("Error", f"Failed to load image: {e}")
+            return None
+
+        hex_cols = max(1, int(width_miles / hex_size))
+        hex_rows = max(1, int(height_miles / hex_size))
+        image = image.resize((hex_cols, hex_rows))
+        pixels = np.array(image)
+
+        hexes = []
+        for row in range(hex_rows):
+            for col in range(hex_cols):
+                r, g, b = pixels[row, col]
+                terrain = "plains"
+                if b > r and b > g and b > 100:
+                    terrain = "water"
+                elif g > r and g > 100:
+                    terrain = "forest" if g < 150 else "plains"
+                elif r > 150 and g > 100 and b < 100:
+                    terrain = "desert" if r > 200 else "hills"
+                elif r < 100 and g < 100 and b < 100:
+                    terrain = "mountains"
+                elif r > 200 and g > 200 and b > 200:
+                    terrain = "tundra"
+                elif g > 80 and b > 80 and r < 100:
+                    terrain = "swamp"
+
+                q = col
+                r_offset = row - (col - (col & 1)) // 2
+                s = -q - r_offset
+                hexes.append({
+                    "q": q,
+                    "r": r_offset,
+                    "s": s,
+                    "terrain": terrain,
+                    "description": f"A {terrain} region",
+                    "explored": False,
+                    "visible": False
+                })
+
+        return {"hexes": hexes}
 
     def show_settings_screen(self):
         """In-window settings configuration"""
@@ -499,24 +598,96 @@ class MainMenu:
         except Exception as e:
             self.show_message("Error", f"Failed to load map: {e}")
             self.running = True
-    def import_converted_map(self):
-        """Placeholder for removed popup-based importer"""
-        self.show_message("Unavailable",
-                          "Converted map import is not available in this version.")
     def open_converter(self):
-        """Open the map image converter"""
-        self.show_message("Unavailable",
-                          "Map image converter is not available without popups.")
+        """Convert a map image to hex format within the app"""
+        directory = "."
+        files = [f for f in os.listdir(directory)
+                 if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+        if not files:
+            self.show_message("No Images",
+                              "Place PNG or JPG files in the app directory.")
+            return
+
+        selection = self.show_file_browser("Select Image", files)
+        if not selection:
+            return
+        image_path = os.path.join(directory, selection)
+
+        w = self.show_text_input("Convert Image", "Map width in miles:", "30")
+        if w is None:
+            return
+        h = self.show_text_input("Convert Image", "Map height in miles:", "30")
+        if h is None:
+            return
+        size = self.show_text_input("Convert Image", "Hex size in miles:", "3")
+        if size is None:
+            return
+        try:
+            width_m = float(w)
+            height_m = float(h)
+            hex_size = float(size)
+        except ValueError:
+            self.show_message("Error", "Invalid numeric input.")
+            return
+
+        map_data = self.convert_image_to_hex_map(image_path, width_m, height_m, hex_size)
+        if not map_data:
+            return
+
+        os.makedirs("maps", exist_ok=True)
+        out_name = os.path.splitext(os.path.basename(image_path))[0] + "_converted.json"
+        with open(os.path.join("maps", out_name), "w") as f:
+            json.dump(map_data, f)
+
+        self.start_game_with_map(map_data)
 
     def open_realistic_generator(self):
-        """Open the realistic map generator"""
-        self.show_message(
-            "Unavailable",
-            "Realistic map generator is not available without popups.")
+        """Generate a realistic map without popups"""
+        width_text = self.show_text_input("Generate Map", "Width (hexes):", "50")
+        if width_text is None:
+            return
+        height_text = self.show_text_input("Generate Map", "Height (hexes):", "50")
+        if height_text is None:
+            return
+        try:
+            width = int(width_text)
+            height = int(height_text)
+        except ValueError:
+            self.show_message("Error", "Width and height must be numbers.")
+            return
+
+        generator = StableMapGenerator()
+        map_data = generator.generate_realistic_map(width, height)
+
+        os.makedirs("maps", exist_ok=True)
+        out_name = f"realistic_{width}x{height}_{random.randint(1000,9999)}.json"
+        with open(os.path.join("maps", out_name), "w") as f:
+            json.dump(map_data, f)
+
+        self.start_game_with_map(map_data)
+
     def import_map(self):
-        """Import any type of map (realistic, converted, etc.)"""
-        self.show_message("Unavailable",
-                          "Import is disabled. Place map files in the maps folder and use Load Map.")
+        """Import a map JSON and start exploring"""
+        directory = "."
+        files = [f for f in os.listdir(directory) if f.lower().endswith(".json")]
+        if not files:
+            self.show_message("No Maps",
+                              "No JSON files found in the app directory.")
+            return
+
+        selection = self.show_file_browser("Import Map", files)
+        if not selection:
+            return
+
+        filename = os.path.join(directory, selection)
+        try:
+            with open(filename, "r") as f:
+                data = json.load(f)
+            if "hexes" not in data:
+                raise ValueError("Invalid map file")
+            self.start_game_with_map(data)
+        except Exception as e:
+            self.show_message("Error", f"Failed to import map: {e}")
 
     def start_game_with_map(self, map_data):
         """Start the game with an imported map"""
