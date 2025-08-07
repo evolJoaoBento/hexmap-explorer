@@ -1,0 +1,63 @@
+# Create .gitignore to prevent future clutter
+@'
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.lnk
+*.bat
+*.vbs
+*.ps1
+settings.json
+test_*.py
+debug_*.py
+temp_*
+*_test.*
+
+# Keep only essential icons
+# hex_explorer_icon_*.png are kept
+# hex_explorer.ico is kept
+'@ | Out-File -FilePath ".gitignore" -Encoding UTF8
+
+Write-Host "✅ Created .gitignore"
