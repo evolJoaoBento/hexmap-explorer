@@ -1,292 +1,260 @@
-1. pip install pygame requests
-2. pip install pillow
+# Hex Map Explorer
 
+A modular D&D 5e-compatible hex-based exploration tool with AI-generated descriptions, dynamic travel system, and rich visualization features.
 
-# Install PyInstaller
+![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Pygame](https://img.shields.io/badge/pygame-2.0+-green.svg)
+![License](https://img.shields.io/badge/license-MIT-purple.svg)
+
+## Features
+
+### Core Functionality
+- **Hex-based exploration** - Navigate through a procedurally generated hex map
+- **D&D 5e travel rules** - Authentic movement mechanics with normal/slow/fast pace
+- **AI-powered descriptions** - Dynamic location descriptions using Ollama LLM
+- **Pixel art visualization** - Beautiful animated sprites for all terrain types
+- **Save/Load system** - Persistent game state with JSON save files
+- **Party management** - Track party composition and member conditions
+- **Transportation modes** - Horses, boats, airships, and more
+- **Day/Night cycle** - Visual time progression with lighting effects
+
+### Terrain Types
+- **Forest** - Dense woodlands with difficult terrain
+- **Mountains** - Impassable peaks requiring detours
+- **Ocean** - Water hexes requiring boats or flight
+- **Plains** - Open grasslands with easy movement
+- **Desert** - Sandy expanses with harsh conditions
+- **Swamp** - Wetlands with very difficult terrain
+- **Tundra** - Frozen wastelands
+- **Volcanic** - Dangerous lava fields
+- **Cities** - Settlements and urban areas
+- **Roads** - Improved travel paths
+
+## Prerequisites
+
+- **Python 3.8+**
+- **Pygame 2.0+**
+- **Pillow (PIL)**
+- **Requests**
+- **Ollama** (optional, for AI descriptions)
+
+## Installation
+
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/yourusername/hexcrawl.git
+cd hexcrawl
+```
+
+### Step 2: Install Python Dependencies
+```bash
+# Core dependencies
+pip install pygame pillow requests
+
+# Optional: For building standalone executable
 pip install pyinstaller
-
-# Create EXE with custom icon
-pyinstaller --onefile --windowed --icon=hex_explorer.ico main_menu.py
-
-
-# Hex Map Explorer - Modular Structure Plan
-
-## Proposed File Structure:
-
-```
-hex_map_explorer/
-├── main.py                    # Entry point
-├── config/
-│   ├── __init__.py
-│   ├── constants.py           # All constants (TERRAIN_TYPES, TRAVEL_PACE, etc.)
-│   └── settings.py            # Game settings and configuration
-├── core/
-│   ├── __init__.py
-│   ├── hex.py                 # Hex dataclass and related functions
-│   ├── map.py                 # HexMap class
-│   └── coordinates.py         # Hex coordinate math functions
-├── travel/
-│   ├── __init__.py
-│   ├── system.py              # TravelSystem class
-│   └── transportation.py      # Transportation mode definitions
-├── generation/
-│   ├── __init__.py
-│   ├── ollama_client.py       # OllamaClient class
-│   └── manager.py             # GenerationManager class
-├── rendering/
-│   ├── __init__.py
-│   ├── renderer.py            # Main HexMapRenderer class
-│   ├── sprites.py             # PixelArtSprites class
-│   └── ui.py                  # UI drawing functions
-├── application/
-│   ├── __init__.py
-│   └── explorer.py            # Main HexMapExplorer class
-└── utils/
-    ├── __init__.py
-    ├── file_operations.py     # Save/load functionality
-    └── dialogs.py             # UI dialogs and popups
 ```
 
-## Key Benefits of This Structure:
-
-1. **Separation of Concerns**: Each module has a specific responsibility
-2. **Easy Testing**: Individual components can be tested in isolation
-3. **Maintainability**: Changes to one system don't affect others
-4. **Reusability**: Components can be used in other projects
-5. **Clear Dependencies**: Import structure shows relationships between modules
-
-## Module Responsibilities:
-
-### config/
-- **constants.py**: All game constants and configuration data
-- **settings.py**: Runtime settings and preferences
-
-### core/
-- **hex.py**: Hex data structure and basic operations
-- **map.py**: Map data management and hex relationships  
-- **coordinates.py**: Hex coordinate system math
-
-### travel/
-- **system.py**: Travel mechanics and movement rules
-- **transportation.py**: Vehicle/mount definitions and behaviors
-
-### generation/
-- **ollama_client.py**: AI description generation
-- **manager.py**: Generation queue and progress tracking
-
-### rendering/
-- **renderer.py**: Main rendering logic and drawing coordination
-- **sprites.py**: Pixel art creation and animation
-- **ui.py**: UI panels, menus, and interface elements
-
-### application/
-- **explorer.py**: Main application loop and event handling
-
-### utils/
-- **file_operations.py**: Save/load game state
-- **dialogs.py**: File dialogs and user prompts
-
-## Implementation Strategy:
-
-1. **Start with constants.py** - Move all configuration data
-2. **Extract core data structures** - Hex class and basic functions
-3. **Separate travel system** - Self-contained travel mechanics
-4. **Split rendering components** - UI, sprites, and main renderer
-5. **Extract generation system** - AI client and management
-6. **Create main application** - Tie everything together
-7. **Add utilities** - File operations and dialogs
-
-This approach maintains all functionality while making the code much more organized and maintainable.
-
-# 🎯 FINAL SETUP GUIDE - Complete Modular Hex Map Explorer
-
-## 🚀 **Quick Start**
-
-1. **Copy all the modular files** to your project directory in this structure:
-2. **Run the main menu**: `python main_menu.py`
-3. **Or run directly**: `python main.py`
-
-## 📁 **Complete File Structure**
-
+### Step 3: Install Ollama (Optional, for AI Descriptions)
+1. Download Ollama from [https://ollama.ai](https://ollama.ai)
+2. Install and run Ollama
+3. Pull the recommended model:
+```bash
+ollama pull qwen2.5:3b
 ```
-hex_map_explorer/
-├── main_menu.py              🎮 UPDATED - Main menu (adapted)
-├── main.py                   ✅ NEW - Clean entry point
-├── config/
-│   ├── __init__.py          ✅ NEW
-│   └── constants.py         ✅ NEW - All game constants
-├── core/
-│   ├── __init__.py          ✅ NEW
-│   ├── hex.py               ✅ NEW - Hex + coordinates
-│   └── map.py               ✅ NEW - Map management
-├── travel/
-│   ├── __init__.py          ✅ NEW
-│   └── system.py            ✅ NEW - Complete travel system
-├── generation/
-│   ├── __init__.py          ✅ NEW
-│   ├── ollama_client.py     ✅ NEW - AI client
-│   └── manager.py           ✅ NEW - Generation manager
-├── rendering/
-│   ├── __init__.py          ✅ NEW
-│   ├── sprites.py           ✅ NEW - Pixel art + animations
-│   ├── ui.py                ✅ NEW - UI components
-│   └── renderer.py          ✅ NEW - Main renderer
-├── application/
-│   ├── __init__.py          ✅ NEW
-│   └── explorer.py          ✅ NEW - Main application
-├── utils/
-│   ├── __init__.py          ✅ NEW
-│   └── file_operations.py  ✅ NEW - Save/load dialogs
-└── hex_map_explorer.py      📁 ORIGINAL - Keep for reference
+4. Start Ollama server:
+```bash
+ollama serve
 ```
 
-## 🔧 **Key Changes Made to Main Menu**
+> **Note:** The application works without Ollama, using fallback descriptions instead.
 
-### ✅ **Updated Imports**
-- Changed from monolithic import to modular imports:
-  ```python
-  # OLD
-  from hex_map_explorer import HexMapExplorer
-  
-  # NEW  
-  from application import HexMapExplorer
-  from generation import OllamaClient, GenerationManager
-  ```
+## Quick Start
 
-### ✅ **Enhanced System Checks**
-- Added `check_modular_system()` function
-- Verifies all modules are properly installed
-- Shows status of each component in settings dialog
-
-### ✅ **Better Error Handling**  
-- Graceful fallbacks if map converter not available
-- Clear error messages for missing modules
-- Module status display in settings
-
-### ✅ **Improved UI**
-- Added "Modular Architecture" badge in settings
-- Shows which modules are loaded
-- Better error messages for troubleshooting
-
-## 🎮 **How to Run**
-
-### Option 1: Main Menu (Recommended)
+### Option 1: Run with Main Menu (Recommended)
 ```bash
 python main_menu.py
 ```
-- Full GUI menu with options
-- Load/save games  
-- Settings configuration
-- Visual module status
 
 ### Option 2: Direct Launch
 ```bash
 python main.py
 ```
-- Launches directly into new game
-- Faster for development/testing
 
-### Option 3: Individual Modules (Testing)
-```python
-# Test travel system
-from travel import TravelSystem
-travel = TravelSystem()
-print(travel.get_movement_cost("forest"))
+### Option 3: Create Standalone Executable
+```bash
+# Windows
+pyinstaller --onefile --windowed --icon=hex_explorer.ico main_menu.py
 
-# Test hex coordinates
-from core import HexCoordinates
-coords = HexCoordinates()
-neighbors = coords.get_neighbors(0, 0, 0)
-
-# Test AI generation
-from generation import OllamaClient
-client = OllamaClient()
-desc = client.generate("forest", (0, 0))
+# macOS/Linux
+pyinstaller --onefile --windowed main_menu.py
 ```
 
-## 🔄 **Migration from Original**
+The executable will be created in the `dist/` folder.
 
-### If you have the original `hex_map_explorer.py`:
-1. **Keep it as backup** - Don't delete it yet!
-2. **Copy the modular files** to the same directory  
-3. **Test the new system** - Run `python main_menu.py`
-4. **Verify all features work** - Load old save files, test all functions
-5. **Once confirmed working** - Archive the original file
+## Controls
 
-### Save File Compatibility
-✅ **Full backward compatibility** - All existing save files work with the modular version!
+### Movement & Navigation
+- **Click hex** - Move to adjacent hex (costs movement points)
+- **Arrow keys** - Pan the map view
+- **Mouse wheel** - Zoom in/out
+- **Space** - Center view on party
 
-## 🎯 **Benefits Achieved**
+### Actions
+- **R** - Rest (reveals 2-hex radius, restores movement)
+- **P** - Change pace (slow/normal/fast)
+- **F** - Forced march (risk exhaustion)
+- **T** - Transportation menu
+- **Y** - Party composition
+- **G** - Toggle hex grid
+- **H** - Toggle UI panels
+- **Escape** - Menu/Options
 
-### 🔧 **For Development**
-- **Easy Testing** - Test individual components
-- **Clear Debugging** - Bugs isolated to specific modules  
-- **Simple Extensions** - Add features without breaking existing code
-- **Better Collaboration** - Multiple people can work on different modules
+### File Operations
+- **Ctrl+S** - Save game
+- **Ctrl+L** - Load game
+- **Ctrl+N** - New map
 
-### 🚀 **For Users** 
-- **Faster Loading** - Only loads needed components
-- **Better Performance** - Optimized memory usage
-- **More Stable** - Crashes isolated to specific features
-- **Cleaner UI** - Better organized settings and status
+## Project Structure
 
-### 📈 **For Maintenance**
-- **Easy Updates** - Modify one module without touching others
-- **Version Control** - Track changes to specific components
-- **Code Reuse** - Components can be used in other projects
-- **Documentation** - Each module has clear responsibility
+```
+hexcrawl/
+├── main.py                   # Direct entry point
+├── main_menu.py              # Menu entry point
+├── config/
+│   ├── constants.py          # Game constants and settings
+│   └── __init__.py
+├── core/
+│   ├── hex.py                # Hex data structures
+│   ├── map.py                # Map management
+│   └── __init__.py
+├── travel/
+│   ├── system.py             # Travel mechanics
+│   └── __init__.py
+├── generation/
+│   ├── ollama_client.py      # AI client
+│   ├── manager.py            # Generation queue
+│   └── __init__.py
+├── rendering/
+│   ├── renderer.py           # Main renderer
+│   ├── sprites.py            # Pixel art generator
+│   ├── ui.py                 # UI components
+│   └── __init__.py
+├── application/
+│   ├── explorer.py           # Main application
+│   └── __init__.py
+├── utils/
+│   ├── file_operations.py    # Save/load
+│   └── __init__.py
+└── maps/                     # Pre-made maps
+    └── islands.json          # Example map
+```
 
-## 🛠️ **Troubleshooting**
+## Configuration
 
-### "Module not found" errors:
-1. Check all `__init__.py` files exist
-2. Verify file structure matches exactly
-3. Run from the correct directory
-4. Check Python path includes project directory
+### Ollama Settings
+Edit `config/constants.py` to change:
+- `OLLAMA_DEFAULT_URL`: Ollama server URL (default: http://localhost:11434)
+- `OLLAMA_DEFAULT_MODEL`: LLM model to use (default: qwen2.5:3b)
+- `GENERATION_TIMEOUT`: API timeout in seconds
 
-### Settings not saving:
-- Make sure you have write permissions in the project directory
-- Check `settings.json` file is created and writable
+### Game Settings
+Modify in `config/constants.py`:
+- `HEX_SIZE`: Size of hex tiles
+- `NORMAL_PACE`: Hexes per day at normal pace
+- `VISION_RANGE`: Visibility radius
+- `UI_COLORS`: Interface color scheme
 
-### Ollama not working:
-- Install Ollama from https://ollama.ai
-- Run `ollama pull qwen2.5:3b`
-- Start with `ollama serve`
-- Check URL in settings matches your Ollama server
+## Troubleshooting
 
-### Original save files not loading:
-- ✅ Should work automatically!
-- If not, check the file contains "hexes" field
-- Verify JSON is properly formatted
+### "Module not found" Errors
+- Ensure all `__init__.py` files exist in module directories
+- Run from the project root directory
+- Check Python path includes the project directory
 
-## 🎊 **Success Metrics**
+### Ollama Not Working
+1. Verify Ollama is running: `ollama list`
+2. Check the URL in settings matches your Ollama server
+3. Ensure the model is installed: `ollama pull qwen2.5:3b`
+4. Test connection: `curl http://localhost:11434/api/tags`
 
-| Metric | Original | Modular | Improvement |
-|--------|----------|---------|-------------|
-| **File Count** | 1 file | 15 files | Better organization |
-| **Lines per File** | 1,700 lines | ~113 avg | Easier to read |
-| **Testability** | Monolithic | Per-module | Much easier |
-| **Maintainability** | Difficult | Easy | Major improvement |
-| **Extensibility** | Limited | High | New features simple |
-| **Load Time** | All at once | On-demand | Faster startup |
-| **Memory Usage** | All loaded | Optimized | More efficient |
-| **Code Reuse** | None | High | Components reusable |
+### Save Files Not Loading
+- Verify the save file contains valid JSON
+- Check file permissions
+- Ensure the save file has a "hexes" field
 
-## 🏁 **You're Done!**
+### Performance Issues
+- Reduce `CHUNK_SIZE` in constants.py
+- Disable animations in sprites.py
+- Lower `MAX_CONCURRENT_GENERATIONS`
 
-The modular Hex Map Explorer is now ready to use! All original functionality is preserved while gaining massive improvements in code organization, maintainability, and extensibility.
+## Game Mechanics
 
-**🎮 Run `python main_menu.py` to start your enhanced adventure!**
+### Movement System
+- **Normal Pace**: 8 hexes/day (24 miles)
+- **Slow Pace**: 6 hexes/day (18 miles) - Allows stealth
+- **Fast Pace**: 10 hexes/day (30 miles) - -5 to passive Perception
+
+### Terrain Movement Costs
+| Terrain | Movement Cost | Special |
+|---------|--------------|---------|
+| Plains | 1.0x | Normal movement |
+| Forest | 1.5x | Difficult terrain |
+| Swamp | 2.0x | Very difficult |
+| Desert | 1.5x | Extreme heat |
+| Mountains | Impassable | Requires detour |
+| Ocean | Impassable | Requires boat/flight |
+| Road | 0.75x | Faster travel |
+
+### Transportation Modes
+| Mode | Speed Modifier | Terrain Access |
+|------|---------------|----------------|
+| On Foot | 1.0x | Standard |
+| Horse | 1.5x | No mountains/ocean |
+| Boat | 1.0x | Water only |
+| Airship | 2.0x | All terrain |
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- D&D 5e travel rules by Wizards of the Coast
+- Pygame community for the excellent game framework
+- Ollama for local LLM capabilities
+- Pixel art inspired by classic RPGs
+
+## Resources
+
+- [D&D 5e Travel Rules](https://www.dndbeyond.com/sources/basic-rules/adventuring#Travel)
+- [Pygame Documentation](https://www.pygame.org/docs/)
+- [Ollama Documentation](https://github.com/ollama/ollama)
+- [Hex Grid Math](https://www.redblobgames.com/grids/hexagons/)
+
+## Roadmap
+
+- [ ] Encounter system with combat
+- [ ] Weather effects on travel
+- [ ] NPC settlements and trading
+- [ ] Quest system
+- [ ] Multiplayer support
+- [ ] Mobile companion app
+- [ ] Custom terrain editor
+- [ ] Mod support
 
 ---
 
-## 📝 **Next Steps (Optional)**
+**Made for D&D adventurers everywhere**
 
-- **Add new terrain types** - Just edit `config/constants.py`
-- **Create custom transportation** - Extend `TRANSPORTATION_MODES`
-- **Build new UI themes** - Modify `UI_COLORS` in constants
-- **Add new renderers** - Create alternative `HexMapRenderer`
-- **Extend travel mechanics** - Add features to `TravelSystem`
-- **Create plugins** - Build new modules that integrate cleanly
-
-The modular structure makes all of these extensions simple and safe!
+Run `python main_menu.py` to start your adventure!
