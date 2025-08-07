@@ -6,7 +6,7 @@ import time
 import random
 from typing import Tuple
 from config.constants import DEFAULT_WINDOW_SIZE, TRANSPORTATION_MODES
-from core.map import HexMap
+from core.map import HexMap  # Import directly, not through __init__
 from generation.ollama_client import OllamaClient
 from generation.manager import GenerationManager
 from rendering.renderer import HexMapRenderer
@@ -17,6 +17,7 @@ class HexMapExplorer:
     """Main application class using modular components"""
     
     def __init__(self):
+        # Always initialize pygame (safe to call multiple times)
         pygame.init()
         
         # Get display info for responsive sizing
@@ -28,22 +29,46 @@ class HexMapExplorer:
         self.width = max(1024, min(int(display_width * 0.9), 1920))
         self.height = max(768, min(int(display_height * 0.9), 1080))
         
-        # Create resizable window
-        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
-        pygame.display.set_caption("Hex Map Explorer - Enhanced Travel System")
+        # Create display window
+        try:
+            self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+            pygame.display.set_caption("Hex Map Explorer - Enhanced Travel System")
+        except Exception as e:
+            print(f"Display initialization error: {e}")
+            # Fallback to basic display
+            try:
+                self.screen = pygame.display.set_mode((1024, 768))
+                self.width, self.height = 1024, 768
+            except Exception as e2:
+                print(f"Fallback display failed: {e2}")
+                raise
         self.clock = pygame.time.Clock()
         
-        # Initialize modular components
-        self.ollama = OllamaClient()
-        self.gen_manager = GenerationManager(self.ollama)
-        self.hex_map = HexMap(self.gen_manager)
-        self.renderer = HexMapRenderer(self.screen, self.hex_map, self.gen_manager)
+        # Initialize modular components with optional seed for consistent generation
+        try:
+            self.ollama = OllamaClient()
+            self.gen_manager = GenerationManager(self.ollama)
+            # Use a random seed for terrain generation (can be made configurable)
+            terrain_seed = random.randint(0, 1000000)
+            
+            # Use only basic terrain generation for stability
+            print("Using basic terrain generation")
+            self.hex_map = HexMap(self.gen_manager, seed=None, use_advanced_terrain=False)
+                
+            self.renderer = HexMapRenderer(self.screen, self.hex_map, self.gen_manager)
+            
+        except Exception as e:
+            print(f"Component initialization error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         self.running = True
         self.last_time = time.time()
         
         print("Initializing map with enhanced travel system...")
         self.hex_map.initialize_map()
+        print("Explorer initialization complete")
 
     def handle_transport_click(self, pos: Tuple[int, int]) -> bool:
         """Handle clicks on transport UI elements"""

@@ -2,12 +2,12 @@
 Configuration constants for Hex Map Explorer
 """
 
-# Hex terrain types with movement costs
+# Hex terrain types with movement costs (basic version only)
 TERRAIN_TYPES = {
-    "forest": {"color": (34, 139, 34), "description": "Dense woodland", "movement_cost": 2},
+    "forest": {"color": (34, 139, 34), "description": "Dense woodland", "movement_cost": 1.5},
     "plains": {"color": (144, 238, 144), "description": "Open grasslands", "movement_cost": 1},
     "mountains": {"color": (139, 137, 137), "description": "Rocky peaks", "movement_cost": 3},
-    "water": {"color": (65, 105, 225), "description": "Deep waters", "movement_cost": 4},
+    "water": {"color": (65, 105, 225), "description": "Deep waters", "movement_cost": 999},
     "desert": {"color": (238, 203, 173), "description": "Sandy dunes", "movement_cost": 2},
     "swamp": {"color": (47, 79, 79), "description": "Murky wetlands", "movement_cost": 3},
     "tundra": {"color": (176, 224, 230), "description": "Frozen wasteland", "movement_cost": 2},

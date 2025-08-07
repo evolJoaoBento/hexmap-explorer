@@ -64,14 +64,20 @@ class MainMenu:
             },
             {
                 "text": "Import Map",
-                "desc": "Import a converted map from an image",
-                "action": self.import_converted_map,
+                "desc": "Import a generated map or converted image map",
+                "action": self.import_map,
                 "rect": None
             },
             {
                 "text": "Convert Image",
                 "desc": "Convert a map image to hex format using AI",
                 "action": self.open_converter,
+                "rect": None
+            },
+            {
+                "text": "Generate Realistic Map",
+                "desc": "Create realistic terrain maps with continents and biomes",
+                "action": self.open_realistic_generator,
                 "rect": None
             },
             {
@@ -197,9 +203,12 @@ class MainMenu:
     def draw_buttons(self):
         """Draw menu buttons"""
         button_width = int(self.width * 0.375)  # 37.5% of screen width
-        button_height = int(self.height * 0.08)  # 8% of screen height (reduced from 8.3%)
-        start_y = int(self.height * 0.28)  # Start at 28% down (moved up from 33%)
-        spacing = int(self.height * 0.10)  # 10% spacing (reduced from 11.6%)
+        button_height = int(self.height * 0.07)  # Slightly smaller buttons
+        start_y = int(self.height * 0.25)  # Start higher up
+        
+        # Calculate even spacing based on number of buttons
+        available_height = self.height - start_y - 60  # Leave space for footer
+        spacing = available_height // len(self.buttons)  # Even distribution
         
         mouse_pos = pygame.mouse.get_pos()
         
@@ -207,11 +216,9 @@ class MainMenu:
             x = self.width // 2 - button_width // 2
             y = start_y + i * spacing
             
-            # Make sure button fits on screen
-            if y + button_height > self.height - 60:  # Leave space for footer
-                # Adjust spacing if buttons don't fit
-                spacing = int((self.height - start_y - 60) / len(self.buttons))
-                y = start_y + i * spacing
+            # Ensure buttons don't go off screen
+            if y + button_height > self.height - 60:
+                y = self.height - 60 - button_height
             
             # Create button rect
             button["rect"] = pygame.Rect(x, y, button_width, button_height)
@@ -265,20 +272,25 @@ class MainMenu:
         print("Starting new adventure with modular system...")
         self.running = False
         
-        # Import the modular application
+        # Simple direct launch without complex pygame transitions
         try:
             from application import HexMapExplorer
             
-            # Pass display info to the game
+            # Keep the current display and just resize it
             info = pygame.display.Info()
             width = max(1024, min(int(info.current_w * 0.9), 1920))
             height = max(768, min(int(info.current_h * 0.9), 1080))
             
             # Create and run the modular explorer
             explorer = HexMapExplorer()
-            # Update screen size
-            explorer.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
-            explorer.renderer.handle_resize(width, height)
+            # Update screen size if needed
+            if explorer.screen.get_size() != (width, height):
+                try:
+                    explorer.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
+                    explorer.renderer.handle_resize(width, height)
+                except:
+                    pass  # Keep current size if resize fails
+            
             explorer.run()
             
         except ImportError as e:
@@ -287,6 +299,8 @@ class MainMenu:
             self.running = True
         except Exception as e:
             print(f"Runtime error: {e}")
+            import traceback
+            traceback.print_exc()
             messagebox.showerror("Error", f"Failed to start game: {e}")
             self.running = True
     
@@ -385,6 +399,189 @@ class MainMenu:
             
         except Exception as e:
             messagebox.showerror("Error", f"Converter failed: {e}")
+    
+    def open_realistic_generator(self):
+        """Open the realistic map generator"""
+        try:
+            print("Opening realistic map generator...")
+            # Use the stable GUI generator
+            subprocess.run([sys.executable, "stable_map_generator.py"], check=True)
+        except subprocess.CalledProcessError as e:
+            messagebox.showerror("Error", f"Failed to run map generator: {e}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Unexpected error: {e}")
+    
+    def import_map(self):
+        """Import any type of map (realistic, converted, etc.)"""
+        try:
+            # Create custom import dialog
+            import_window = tk.Tk()
+            import_window.title("Import Map")
+            import_window.geometry("400x200")
+            
+            self.selected_map_file = None
+            self.selected_map_data = None
+            
+            def select_file():
+                filename = filedialog.askopenfilename(
+                    title="Select Map File",
+                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+                )
+                if filename:
+                    try:
+                        with open(filename, 'r') as f:
+                            map_data = json.load(f)
+                        
+                        if "hexes" not in map_data:
+                            messagebox.showerror("Invalid Map", "This file doesn't contain valid hex map data.")
+                            return
+                        
+                        self.selected_map_file = filename
+                        self.selected_map_data = map_data
+                        
+                        # Update file label
+                        file_label.config(text=f"Selected: {filename.split('/')[-1]}")
+                        
+                        # Enable buttons
+                        preview_btn.config(state=tk.NORMAL)
+                        import_btn.config(state=tk.NORMAL)
+                        
+                        # Show map info
+                        info_text = f"Size: {map_data.get('width', '?')}x{map_data.get('height', '?')}\n"
+                        info_text += f"Hexes: {len(map_data['hexes'])}\n"
+                        info_text += f"Seed: {map_data.get('seed', 'Unknown')}"
+                        info_label.config(text=info_text)
+                        
+                    except Exception as e:
+                        messagebox.showerror("Error", f"Failed to load map: {e}")
+            
+            def preview_map():
+                if self.selected_map_data:
+                    try:
+                        # Launch map preview
+                        subprocess.run([sys.executable, "map_preview.py"], check=True)
+                    except Exception as e:
+                        messagebox.showerror("Error", f"Failed to open preview: {e}")
+            
+            def import_selected():
+                if self.selected_map_data:
+                    import_window.destroy()
+                    self.start_game_with_map(self.selected_map_data)
+            
+            def cancel_import():
+                import_window.destroy()
+            
+            # UI Layout
+            tk.Label(import_window, text="Import Hex Map", font=("Arial", 14, "bold")).pack(pady=10)
+            
+            tk.Button(import_window, text="Select Map File", command=select_file, 
+                     bg="#4CAF50", fg="white", font=("Arial", 10, "bold")).pack(pady=5)
+            
+            file_label = tk.Label(import_window, text="No file selected", fg="gray")
+            file_label.pack(pady=5)
+            
+            info_label = tk.Label(import_window, text="", justify=tk.LEFT)
+            info_label.pack(pady=5)
+            
+            button_frame = tk.Frame(import_window)
+            button_frame.pack(pady=10)
+            
+            preview_btn = tk.Button(button_frame, text="Preview Map", command=preview_map, 
+                                   state=tk.DISABLED, bg="#2196F3", fg="white")
+            preview_btn.pack(side=tk.LEFT, padx=5)
+            
+            import_btn = tk.Button(button_frame, text="Import & Play", command=import_selected, 
+                                  state=tk.DISABLED, bg="#FF9800", fg="white", 
+                                  font=("Arial", 10, "bold"))
+            import_btn.pack(side=tk.LEFT, padx=5)
+            
+            tk.Button(button_frame, text="Cancel", command=cancel_import).pack(side=tk.LEFT, padx=5)
+            
+            # Make it modal
+            import_window.transient()
+            import_window.grab_set()
+            import_window.mainloop()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Import failed: {e}")
+    
+    def start_game_with_map(self, map_data):
+        """Start the game with an imported map"""
+        try:
+            from application import HexMapExplorer
+            
+            self.running = False
+            
+            # Create explorer
+            explorer = HexMapExplorer()
+            
+            # Load the map data
+            explorer.hex_map.hexes.clear()
+            
+            # Load hexes
+            from core.hex import Hex
+            for hex_data in map_data["hexes"]:
+                hex_obj = Hex.from_dict(hex_data)
+                explorer.hex_map.hexes[(hex_obj.q, hex_obj.r, hex_obj.s)] = hex_obj
+            
+            # Find a good starting position (preferably land near center)
+            start_pos = self.find_good_starting_position(explorer.hex_map.hexes)
+            explorer.hex_map.current_position = start_pos
+            
+            # Make starting area visible and explored
+            start_hex = explorer.hex_map.hexes.get(start_pos)
+            if start_hex:
+                start_hex.explored = True
+                start_hex.visible = True
+                
+                # Make nearby hexes visible
+                neighbors = explorer.hex_map.coords.get_neighbors(*start_pos)
+                for nq, nr, ns in neighbors:
+                    neighbor_hex = explorer.hex_map.hexes.get((nq, nr, ns))
+                    if neighbor_hex:
+                        neighbor_hex.visible = True
+            
+            # Load travel data if available
+            if "travel_data" in map_data:
+                explorer.hex_map.travel_system.load_from_data(map_data["travel_data"])
+            
+            explorer.hex_map.calculate_distances()
+            
+            print(f"Loaded map with {len(explorer.hex_map.hexes)} hexes")
+            print(f"Starting position: {start_pos}")
+            
+            explorer.run()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to start game with imported map: {e}")
+            self.running = True
+    
+    def find_good_starting_position(self, hexes):
+        """Find a good starting position on land near the center"""
+        # Try to find land hexes near the center
+        candidates = []
+        
+        for (q, r, s), hex_obj in hexes.items():
+            # Skip water hexes
+            if hex_obj.terrain == "water":
+                continue
+            
+            # Calculate distance from center
+            distance = abs(q) + abs(r) + abs(s)  # Manhattan distance in hex space
+            
+            # Prefer positions closer to center
+            candidates.append((distance, (q, r, s), hex_obj.terrain))
+        
+        if candidates:
+            # Sort by distance and pick the closest land hex
+            candidates.sort()
+            _, position, terrain = candidates[0]
+            print(f"Found starting position at {position} ({terrain})")
+            return position
+        else:
+            # Fallback to (0,0,0) if no good position found
+            print("No good starting position found, using (0,0,0)")
+            return (0, 0, 0)
     
     def open_settings(self):
         """Open settings dialog"""

@@ -12,6 +12,8 @@ A modular D&D 5e-compatible hex-based exploration tool with AI-generated descrip
 - **Hex-based exploration** - Navigate through a procedurally generated hex map
 - **D&D 5e travel rules** - Authentic movement mechanics with normal/slow/fast pace
 - **AI-powered descriptions** - Dynamic location descriptions using Ollama LLM
+- **Realistic terrain generation** - Create continent-style maps with natural biome distribution
+- **Interactive map preview** - Preview and navigate generated maps before importing
 - **Pixel art visualization** - Beautiful animated sprites for all terrain types
 - **Save/Load system** - Persistent game state with JSON save files
 - **Party management** - Track party composition and member conditions
@@ -20,15 +22,13 @@ A modular D&D 5e-compatible hex-based exploration tool with AI-generated descrip
 
 ### Terrain Types
 - **Forest** - Dense woodlands with difficult terrain
-- **Mountains** - Impassable peaks requiring detours
-- **Ocean** - Water hexes requiring boats or flight
+- **Mountains** - Rocky peaks requiring difficult navigation
+- **Water** - Oceans, lakes, and rivers
 - **Plains** - Open grasslands with easy movement
-- **Desert** - Sandy expanses with harsh conditions
+- **Desert** - Hot, arid regions with challenging conditions
 - **Swamp** - Wetlands with very difficult terrain
-- **Tundra** - Frozen wastelands
-- **Volcanic** - Dangerous lava fields
-- **Cities** - Settlements and urban areas
-- **Roads** - Improved travel paths
+- **Tundra** - Cold, frozen landscapes
+- **Hills** - Rolling elevated terrain
 
 ## Prerequisites
 
@@ -75,6 +75,13 @@ ollama serve
 ```bash
 python main_menu.py
 ```
+The main menu provides access to:
+- **New Adventure** - Start exploring with procedural generation
+- **Load Map** - Continue a saved adventure
+- **Import Map** - Load custom or generated maps with preview functionality
+- **Convert Image** - Transform image maps to hex format using AI
+- **Generate Realistic Map** - Create continent-style terrain maps
+- **Settings** - Configure AI models and game options
 
 ### Option 2: Direct Launch
 ```bash
@@ -146,8 +153,10 @@ hexcrawl/
 ├── utils/
 │   ├── file_operations.py    # Save/load
 │   └── __init__.py
-└── maps/                     # Pre-made maps
-    └── islands.json          # Example map
+├── stable_map_generator.py   # Realistic terrain generator
+├── map_preview.py           # Interactive map preview
+└── maps/                     # Generated and pre-made maps
+    └── *.json               # Map files
 ```
 
 ## Configuration
@@ -241,6 +250,16 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Pygame Documentation](https://www.pygame.org/docs/)
 - [Ollama Documentation](https://github.com/ollama/ollama)
 - [Hex Grid Math](https://www.redblobgames.com/grids/hexagons/)
+
+## Recent Updates
+
+### v2.0 - Realistic Terrain Generation
+- ✅ **Advanced terrain generation** using fractal noise algorithms
+- ✅ **Realistic continent shapes** with natural coastlines, bays, and peninsulas  
+- ✅ **Interactive map preview** with pan and zoom navigation
+- ✅ **Improved biome distribution** based on elevation, temperature, and moisture
+- ✅ **Enhanced map import system** with preview capabilities
+- ✅ **Better terrain variety** including rivers, islands, and mountain ranges
 
 ## Roadmap
 

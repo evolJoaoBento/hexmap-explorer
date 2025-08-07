@@ -30,7 +30,16 @@ class Hex:
     @classmethod
     def from_dict(cls, data):
         """Create Hex from dictionary (JSON deserialization)"""
-        return cls(**data, generating=False, distance_from_current=999)
+        # Make a copy to avoid modifying original
+        hex_data = data.copy()
+        
+        # Set defaults for missing fields
+        hex_data.setdefault('generating', False)
+        hex_data.setdefault('distance_from_current', 999)
+        hex_data.setdefault('explored', False)
+        hex_data.setdefault('visible', False)
+        
+        return cls(**hex_data)
     
     def __str__(self):
         return f"Hex({self.q}, {self.r}, {self.s}) - {self.terrain}"
