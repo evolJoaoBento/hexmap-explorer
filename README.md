@@ -261,16 +261,14 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - ✅ **Enhanced map import system** with preview capabilities
 - ✅ **Better terrain variety** including rivers, islands, and mountain ranges
 
-## Roadmap
+## Maybe (no promises) Roadmap
 
-- [ ] Encounter system with combat
+- ✅ ~~Improve terrain Generation~~ - **COMPLETED in v2.0**
+- [ ] Random Encounter system
 - [ ] Weather effects on travel
 - [ ] NPC settlements and trading
-- [ ] Quest system
-- [ ] Multiplayer support
-- [ ] Mobile companion app
+- [ ] Multiplayer (DM/Player) support
 - [ ] Custom terrain editor
-- [ ] Mod support
 
 ---
 
