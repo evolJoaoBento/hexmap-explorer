@@ -1,12 +1,13 @@
 import pygame
 import sys
 import json
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import subprocess
 import os
 import random
 import math
+import textwrap
+from PIL import Image
+import numpy as np
+from stable_map_generator import StableMapGenerator
 
 class MainMenu:
     """Main menu for Hex Map Explorer - Adapted for modular structure"""
@@ -261,258 +262,463 @@ class MainMenu:
         footer = self.version_font.render(version_text, True, self.desc_color)
         footer_rect = footer.get_rect(center=(self.width // 2, self.height * 0.97))
         self.screen.blit(footer, footer_rect)
-        
+
         # Controls hint
         controls = self.version_font.render("Click to select | ESC to go back", True, self.desc_color)
         controls_rect = controls.get_rect(center=(self.width // 2, self.height * 0.93))
         self.screen.blit(controls, controls_rect)
+
+    def show_message(self, title, message):
+        """Display a simple in-window message"""
+        lines = textwrap.wrap(message, 60)
+        box = pygame.Rect(self.width * 0.1, self.height * 0.3,
+                          self.width * 0.8, self.height * 0.4)
+
+        waiting = True
+        while waiting:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.quit_game()
+                elif event.type == pygame.KEYDOWN and event.key in (
+                    pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE
+                ):
+                    waiting = False
+
+            self.draw_background()
+            pygame.draw.rect(self.screen, self.button_color, box)
+            pygame.draw.rect(self.screen, self.title_color, box, 2)
+
+            title_surf = self.subtitle_font.render(title, True, self.button_text)
+            self.screen.blit(title_surf,
+                             title_surf.get_rect(center=(self.width // 2,
+                                                         box.y + 40)))
+
+            for i, line in enumerate(lines):
+                text_surf = self.desc_font.render(line, True, self.button_text)
+                self.screen.blit(text_surf,
+                                 (box.x + 20,
+                                  box.y + 80 + i * (self.desc_font.get_height() + 5)))
+
+            hint = self.version_font.render(
+                "Press ENTER or ESC to continue", True, self.desc_color)
+            self.screen.blit(hint,
+                             hint.get_rect(center=(self.width // 2, box.bottom - 30)))
+
+            pygame.display.flip()
+            self.clock.tick(60)
+
+    def show_text_input(self, title, prompt, initial=""):
+        """Prompt the user for text input within the window"""
+        text = initial
+        pygame.key.start_text_input()
+        try:
+            while True:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.quit_game()
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            return None
+                        elif event.key == pygame.K_RETURN:
+                            return text.strip()
+                        elif event.key == pygame.K_BACKSPACE:
+                            text = text[:-1]
+                        elif event.unicode.isprintable():
+                            text += event.unicode
+
+                self.draw_background()
+                title_surf = self.subtitle_font.render(title, True, self.title_color)
+                self.screen.blit(title_surf,
+                                 title_surf.get_rect(center=(self.width // 2,
+                                                             self.height * 0.2)))
+
+                prompt_surf = self.button_font.render(prompt, True, self.button_text)
+                self.screen.blit(prompt_surf,
+                                 prompt_surf.get_rect(center=(self.width // 2,
+                                                              self.height * 0.35)))
+
+                box = pygame.Rect(self.width * 0.2,
+                                   self.height * 0.45,
+                                   self.width * 0.6,
+                                   self.button_font.get_height() * 1.6)
+                pygame.draw.rect(self.screen, self.button_color, box)
+                pygame.draw.rect(self.screen, self.title_color, box, 2)
+                input_surf = self.button_font.render(text, True, self.title_color)
+                self.screen.blit(input_surf,
+                                 input_surf.get_rect(center=box.center))
+
+                hint = self.version_font.render(
+                    "Enter to confirm, Esc to cancel", True, self.desc_color)
+                self.screen.blit(hint,
+                                 hint.get_rect(center=(self.width // 2,
+                                                       self.height * 0.8)))
+
+                pygame.display.flip()
+                self.clock.tick(60)
+        finally:
+            pygame.key.stop_text_input()
+
+    def show_file_browser(self, title, start_dir=".", extensions=None):
+        """In-window file browser with basic directory navigation"""
+        current_dir = os.path.abspath(start_dir)
+        index = 0
+        while True:
+            try:
+                entries = []
+                if os.path.dirname(current_dir) != current_dir:
+                    entries.append(("..", "dir"))
+                for name in sorted(os.listdir(current_dir)):
+                    full = os.path.join(current_dir, name)
+                    if os.path.isdir(full):
+                        entries.append((name + "/", "dir"))
+                    elif not extensions or any(name.lower().endswith(ext) for ext in extensions):
+                        entries.append((name, "file"))
+                if not entries:
+                    entries.append(("..", "dir"))
+            except Exception:
+                entries = [("..", "dir")]
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.quit_game()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return None
+                    elif event.key in (pygame.K_UP, pygame.K_w):
+                        index = (index - 1) % len(entries)
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        index = (index + 1) % len(entries)
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        name, typ = entries[index]
+                        if typ == "dir":
+                            current_dir = os.path.normpath(os.path.join(current_dir, name.rstrip("/")))
+                            index = 0
+                        else:
+                            return os.path.join(current_dir, name)
+
+            self.draw_background()
+            title_surf = self.subtitle_font.render(title, True, self.title_color)
+            self.screen.blit(title_surf,
+                             title_surf.get_rect(center=(self.width // 2,
+                                                         self.height * 0.1)))
+
+            path_surf = self.version_font.render(current_dir, True, self.desc_color)
+            self.screen.blit(path_surf,
+                             path_surf.get_rect(center=(self.width // 2,
+                                                        self.height * 0.18)))
+
+            start_y = self.height * 0.25
+            for i, (name, _) in enumerate(entries):
+                color = self.title_color if i == index else self.button_text
+                text = self.button_font.render(name, True, color)
+                rect = text.get_rect(center=(self.width // 2,
+                                             start_y + i * self.button_font.get_height() * 1.3))
+                self.screen.blit(text, rect)
+
+            hint = self.version_font.render(
+                "Arrows to navigate, Enter to select, Esc to cancel",
+                True, self.desc_color)
+            self.screen.blit(hint,
+                             hint.get_rect(center=(self.width // 2,
+                                                   self.height * 0.9)))
+
+            pygame.display.flip()
+            self.clock.tick(60)
+
+    def convert_image_to_hex_map(self, image_path, width_miles, height_miles, hex_size):
+        """Convert an image to hex map data using basic color analysis"""
+        try:
+            image = Image.open(image_path).convert("RGB")
+        except Exception as e:
+            self.show_message("Error", f"Failed to load image: {e}")
+            return None
+
+        hex_cols = max(1, int(width_miles / hex_size))
+        hex_rows = max(1, int(height_miles / hex_size))
+        image = image.resize((hex_cols, hex_rows))
+        pixels = np.array(image)
+
+        hexes = []
+        for row in range(hex_rows):
+            for col in range(hex_cols):
+                r, g, b = pixels[row, col]
+                terrain = "plains"
+                if b > r and b > g and b > 100:
+                    terrain = "water"
+                elif g > r and g > 100:
+                    terrain = "forest" if g < 150 else "plains"
+                elif r > 150 and g > 100 and b < 100:
+                    terrain = "desert" if r > 200 else "hills"
+                elif r < 100 and g < 100 and b < 100:
+                    terrain = "mountains"
+                elif r > 200 and g > 200 and b > 200:
+                    terrain = "tundra"
+                elif g > 80 and b > 80 and r < 100:
+                    terrain = "swamp"
+
+                q = col
+                r_offset = row - (col - (col & 1)) // 2
+                s = -q - r_offset
+                hexes.append({
+                    "q": q,
+                    "r": r_offset,
+                    "s": s,
+                    "terrain": terrain,
+                    "description": f"A {terrain} region",
+                    "explored": False,
+                    "visible": False
+                })
+
+        return {"hexes": hexes}
+
+    def show_settings_screen(self):
+        """In-window settings configuration"""
+        options = [
+            ("AI Model", ["qwen2.5:3b", "mistral:7b", "llama3:8b"],
+             self.settings.get("ai_model", "qwen2.5:3b")),
+            ("Vision Model", ["llava:7b", "bakllava:7b"],
+             self.settings.get("vision_model", "llava:7b")),
+            ("Ollama URL", None,
+             self.settings.get("ollama_url", "http://localhost:11434")),
+        ]
+        index = 0
+        pygame.key.start_text_input()
+        try:
+            while True:
+                self.clock.tick(60)
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.quit_game()
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            return
+                        elif event.key in (pygame.K_UP, pygame.K_w):
+                            index = (index - 1) % len(options)
+                        elif event.key in (pygame.K_DOWN, pygame.K_s):
+                            index = (index + 1) % len(options)
+                        elif event.key in (pygame.K_LEFT, pygame.K_a):
+                            name, vals, val = options[index]
+                            if vals:
+                                val = vals[(vals.index(val) - 1) % len(vals)]
+                                options[index] = (name, vals, val)
+                        elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                            name, vals, val = options[index]
+                            if vals:
+                                val = vals[(vals.index(val) + 1) % len(vals)]
+                                options[index] = (name, vals, val)
+                        elif event.key == pygame.K_BACKSPACE and index == 2:
+                            name, vals, val = options[index]
+                            val = val[:-1]
+                            options[index] = (name, vals, val)
+                        elif event.key == pygame.K_RETURN:
+                            self.settings["ai_model"] = options[0][2]
+                            self.settings["vision_model"] = options[1][2]
+                            self.settings["ollama_url"] = options[2][2]
+                            self.save_settings()
+                            self.show_message("Settings", "Settings saved.")
+                            return
+                        else:
+                            if index == 2 and event.unicode.isprintable():
+                                name, vals, val = options[index]
+                                val += event.unicode
+                                options[index] = (name, vals, val)
+
+                self.draw_background()
+                title = self.title_font.render("Settings", True, self.title_color)
+                self.screen.blit(title,
+                                 title.get_rect(center=(self.width // 2,
+                                                        self.height * 0.15)))
+
+                start_y = self.height * 0.3
+                for i, (name, vals, val) in enumerate(options):
+                    color = self.title_color if i == index else self.button_text
+                    text = self.button_font.render(f"{name}: {val}", True, color)
+                    rect = text.get_rect(center=(self.width // 2,
+                                                 start_y + i * self.button_font.get_height() * 1.4))
+                    self.screen.blit(text, rect)
+
+                hint = self.version_font.render(
+                    "Arrows to change, Enter to save, Esc to cancel",
+                    True, self.desc_color)
+                self.screen.blit(hint,
+                                 hint.get_rect(center=(self.width // 2,
+                                                       self.height * 0.9)))
+
+                pygame.display.flip()
+        finally:
+            pygame.key.stop_text_input()
     
     def start_new_game(self):
         """Start a new hex map adventure using modular system"""
         print("Starting new adventure with modular system...")
-        self.running = False
-        
-        # Simple direct launch without complex pygame transitions
+
         try:
             from application import HexMapExplorer
-            
-            # Keep the current display and just resize it
+
             info = pygame.display.Info()
             width = max(1024, min(int(info.current_w * 0.9), 1920))
             height = max(768, min(int(info.current_h * 0.9), 1080))
-            
-            # Create and run the modular explorer
+
             explorer = HexMapExplorer()
-            # Update screen size if needed
             if explorer.screen.get_size() != (width, height):
                 try:
                     explorer.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
                     explorer.renderer.handle_resize(width, height)
-                except:
-                    pass  # Keep current size if resize fails
-            
+                except Exception:
+                    pass
+
             explorer.run()
-            
+
         except ImportError as e:
             print(f"Import error: {e}")
-            messagebox.showerror("Error", f"Could not load modular game: {e}\n\nMake sure all modules are properly installed.")
-            self.running = True
+            self.show_message("Error",
+                               f"Could not load modular game: {e}\nMake sure all modules are properly installed.")
         except Exception as e:
             print(f"Runtime error: {e}")
             import traceback
             traceback.print_exc()
-            messagebox.showerror("Error", f"Failed to start game: {e}")
-            self.running = True
+            self.show_message("Error", f"Failed to start game: {e}")
+        finally:
+            # Reinitialize menu after returning from the game
+            self.__init__()
     
     def load_saved_map(self):
         """Load a previously saved map using modular system"""
-        root = tk.Tk()
-        root.withdraw()
-        
-        filename = filedialog.askopenfilename(
-            title="Load Saved Map",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-        )
-        
-        if filename:
-            try:
-                # Check if it's a valid map file
-                with open(filename, 'r') as f:
-                    data = json.load(f)
-                    if "hexes" not in data:
-                        raise ValueError("Invalid map file")
-                
-                # Start modular game with loaded map
-                from application import HexMapExplorer
-                self.running = False
-                
-                explorer = HexMapExplorer()
-                explorer.hex_map.load_from_json(filename)
-                explorer.renderer.set_message("Map loaded from menu!")
-                explorer.run()
-                
-            except ImportError as e:
-                messagebox.showerror("Error", f"Could not load modular game: {e}")
-                self.running = True
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load map: {e}")
-                self.running = True
-        
-        root.destroy()
-    
-    def import_converted_map(self):
-        """Import a converted map with options using modular system"""
+        directory = "maps"
         try:
-            # Try to import map converter (may not exist in modular version)
-            try:
-                from map_image_converter import MapImportDialog
-            except ImportError:
-                messagebox.showwarning("Feature Not Available", 
-                    "Map image converter not available in this modular version.\n"
-                    "This feature may be added in a future update.")
-                return
-            
+            has_files = any(f.endswith(".json") for f in os.listdir(directory))
+        except FileNotFoundError:
+            has_files = False
+
+        if not has_files:
+            self.show_message("No Maps",
+                              "No JSON maps found in the 'maps' directory.")
+            return
+
+        filename = self.show_file_browser("Select Map", directory, [".json"])
+        if not filename:
+            return
+
+        try:
+            with open(filename, 'r') as f:
+                data = json.load(f)
+                if "hexes" not in data:
+                    raise ValueError("Invalid map file")
+
             from application import HexMapExplorer
-            from generation import OllamaClient, GenerationManager
-            
-            self.running = False
+
             explorer = HexMapExplorer()
-            
-            # Open import dialog
-            root = tk.Tk()
-            root.withdraw()
-            dialog = MapImportDialog(root, explorer.hex_map)
-            root.wait_window(dialog.dialog)
-            root.destroy()
-            
-            # If map was imported, run the game
-            if explorer.hex_map.hexes:
-                explorer.renderer.set_message("Map imported successfully!")
-                explorer.run()
-            else:
-                self.running = True  # Return to menu if cancelled
-                
+            explorer.hex_map.load_from_json(filename)
+            explorer.renderer.set_message("Map loaded from menu!")
+            explorer.run()
+
+        except ImportError as e:
+            self.show_message("Error", f"Could not load modular game: {e}")
         except Exception as e:
-            messagebox.showerror("Error", f"Import failed: {e}")
-            self.running = True
-    
+            self.show_message("Error", f"Failed to load map: {e}")
+        finally:
+            self.__init__()
     def open_converter(self):
-        """Open the map image converter"""
+        """Convert a map image to hex format within the app"""
+        directory = "."
         try:
-            # Try to import map converter (may not exist in modular version)
-            try:
-                from map_image_converter import MapImageConverter
-            except ImportError:
-                messagebox.showwarning("Feature Not Available", 
-                    "Map image converter not available in this modular version.\n"
-                    "This feature may be added in a future update.")
-                return
-            
-            root = tk.Tk()
-            root.withdraw()
-            
-            converter = MapImageConverter()
-            converter.open_converter_window()
-            
-            # Keep the converter window open
-            root.mainloop()
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Converter failed: {e}")
-    
+            has_images = any(f.lower().endswith((".png", ".jpg", ".jpeg"))
+                              for f in os.listdir(directory))
+        except FileNotFoundError:
+            has_images = False
+        if not has_images:
+            self.show_message("No Images",
+                              "Place PNG or JPG files in the app directory.")
+            return
+
+        image_path = self.show_file_browser("Select Image", directory,
+                                           [".png", ".jpg", ".jpeg"])
+        if not image_path:
+            return
+
+        w = self.show_text_input("Convert Image", "Map width in miles:", "30")
+        if w is None:
+            return
+        h = self.show_text_input("Convert Image", "Map height in miles:", "30")
+        if h is None:
+            return
+        size = self.show_text_input("Convert Image", "Hex size in miles:", "3")
+        if size is None:
+            return
+        try:
+            width_m = float(w)
+            height_m = float(h)
+            hex_size = float(size)
+        except ValueError:
+            self.show_message("Error", "Invalid numeric input.")
+            return
+
+        map_data = self.convert_image_to_hex_map(image_path, width_m, height_m, hex_size)
+        if not map_data:
+            return
+
+        os.makedirs("maps", exist_ok=True)
+        out_name = os.path.splitext(os.path.basename(image_path))[0] + "_converted.json"
+        with open(os.path.join("maps", out_name), "w") as f:
+            json.dump(map_data, f)
+
+        self.start_game_with_map(map_data)
+
     def open_realistic_generator(self):
-        """Open the realistic map generator"""
+        """Generate a realistic map without popups"""
+        width_text = self.show_text_input("Generate Map", "Width (hexes):", "50")
+        if width_text is None:
+            return
+        height_text = self.show_text_input("Generate Map", "Height (hexes):", "50")
+        if height_text is None:
+            return
         try:
-            print("Opening realistic map generator...")
-            # Use the stable GUI generator
-            subprocess.run([sys.executable, "stable_map_generator.py"], check=True)
-        except subprocess.CalledProcessError as e:
-            messagebox.showerror("Error", f"Failed to run map generator: {e}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Unexpected error: {e}")
-    
+            width = int(width_text)
+            height = int(height_text)
+        except ValueError:
+            self.show_message("Error", "Width and height must be numbers.")
+            return
+
+        generator = StableMapGenerator()
+        map_data = generator.generate_realistic_map(width, height)
+
+        os.makedirs("maps", exist_ok=True)
+        out_name = f"realistic_{width}x{height}_{random.randint(1000,9999)}.json"
+        with open(os.path.join("maps", out_name), "w") as f:
+            json.dump(map_data, f)
+
+        self.start_game_with_map(map_data)
+
     def import_map(self):
-        """Import any type of map (realistic, converted, etc.)"""
+        """Import a map JSON and start exploring"""
+        directory = "maps"
         try:
-            # Create custom import dialog
-            import_window = tk.Tk()
-            import_window.title("Import Map")
-            import_window.geometry("400x200")
-            
-            self.selected_map_file = None
-            self.selected_map_data = None
-            
-            def select_file():
-                filename = filedialog.askopenfilename(
-                    title="Select Map File",
-                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-                )
-                if filename:
-                    try:
-                        with open(filename, 'r') as f:
-                            map_data = json.load(f)
-                        
-                        if "hexes" not in map_data:
-                            messagebox.showerror("Invalid Map", "This file doesn't contain valid hex map data.")
-                            return
-                        
-                        self.selected_map_file = filename
-                        self.selected_map_data = map_data
-                        
-                        # Update file label
-                        file_label.config(text=f"Selected: {filename.split('/')[-1]}")
-                        
-                        # Enable buttons
-                        preview_btn.config(state=tk.NORMAL)
-                        import_btn.config(state=tk.NORMAL)
-                        
-                        # Show map info
-                        info_text = f"Size: {map_data.get('width', '?')}x{map_data.get('height', '?')}\n"
-                        info_text += f"Hexes: {len(map_data['hexes'])}\n"
-                        info_text += f"Seed: {map_data.get('seed', 'Unknown')}"
-                        info_label.config(text=info_text)
-                        
-                    except Exception as e:
-                        messagebox.showerror("Error", f"Failed to load map: {e}")
-            
-            def preview_map():
-                if self.selected_map_data:
-                    try:
-                        # Launch map preview
-                        subprocess.run([sys.executable, "map_preview.py"], check=True)
-                    except Exception as e:
-                        messagebox.showerror("Error", f"Failed to open preview: {e}")
-            
-            def import_selected():
-                if self.selected_map_data:
-                    import_window.destroy()
-                    self.start_game_with_map(self.selected_map_data)
-            
-            def cancel_import():
-                import_window.destroy()
-            
-            # UI Layout
-            tk.Label(import_window, text="Import Hex Map", font=("Arial", 14, "bold")).pack(pady=10)
-            
-            tk.Button(import_window, text="Select Map File", command=select_file, 
-                     bg="#4CAF50", fg="white", font=("Arial", 10, "bold")).pack(pady=5)
-            
-            file_label = tk.Label(import_window, text="No file selected", fg="gray")
-            file_label.pack(pady=5)
-            
-            info_label = tk.Label(import_window, text="", justify=tk.LEFT)
-            info_label.pack(pady=5)
-            
-            button_frame = tk.Frame(import_window)
-            button_frame.pack(pady=10)
-            
-            preview_btn = tk.Button(button_frame, text="Preview Map", command=preview_map, 
-                                   state=tk.DISABLED, bg="#2196F3", fg="white")
-            preview_btn.pack(side=tk.LEFT, padx=5)
-            
-            import_btn = tk.Button(button_frame, text="Import & Play", command=import_selected, 
-                                  state=tk.DISABLED, bg="#FF9800", fg="white", 
-                                  font=("Arial", 10, "bold"))
-            import_btn.pack(side=tk.LEFT, padx=5)
-            
-            tk.Button(button_frame, text="Cancel", command=cancel_import).pack(side=tk.LEFT, padx=5)
-            
-            # Make it modal
-            import_window.transient()
-            import_window.grab_set()
-            import_window.mainloop()
-            
+            has_files = any(f.lower().endswith(".json") for f in os.listdir(directory))
+        except FileNotFoundError:
+            has_files = False
+        if not has_files:
+            self.show_message("No Maps",
+                              "No JSON files found in the 'maps' directory.")
+            return
+
+        filename = self.show_file_browser("Import Map", directory, [".json"])
+        if not filename:
+            return
+
+        try:
+            with open(filename, "r") as f:
+                data = json.load(f)
+            if "hexes" not in data:
+                raise ValueError("Invalid map file")
+            self.start_game_with_map(data)
         except Exception as e:
-            messagebox.showerror("Error", f"Import failed: {e}")
-    
+            self.show_message("Error", f"Failed to import map: {e}")
+
     def start_game_with_map(self, map_data):
         """Start the game with an imported map"""
         try:
             from application import HexMapExplorer
-            
-            self.running = False
-            
-            # Create explorer
+
             explorer = HexMapExplorer()
             
             # Load the map data
@@ -544,17 +750,19 @@ class MainMenu:
             # Load travel data if available
             if "travel_data" in map_data:
                 explorer.hex_map.travel_system.load_from_data(map_data["travel_data"])
-            
+
             explorer.hex_map.calculate_distances()
-            
+
             print(f"Loaded map with {len(explorer.hex_map.hexes)} hexes")
             print(f"Starting position: {start_pos}")
-            
+
             explorer.run()
-            
+
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to start game with imported map: {e}")
-            self.running = True
+            self.show_message("Error",
+                              f"Failed to start game with imported map: {e}")
+        finally:
+            self.__init__()
     
     def find_good_starting_position(self, hexes):
         """Find a good starting position on land near the center"""
@@ -582,113 +790,10 @@ class MainMenu:
             # Fallback to (0,0,0) if no good position found
             print("No good starting position found, using (0,0,0)")
             return (0, 0, 0)
-    
     def open_settings(self):
         """Open settings dialog"""
-        self.show_settings_dialog()
-    
-    def show_settings_dialog(self):
-        """Show settings configuration dialog"""
-        settings_window = tk.Tk()
-        settings_window.title("Settings")
-        settings_window.geometry("400x350")
-        
-        # Title
-        tk.Label(settings_window, text="Game Settings", 
-                font=("Arial", 14, "bold")).pack(pady=10)
-        
-        # Modular system info
-        info_frame = tk.Frame(settings_window, bg="lightblue")
-        info_frame.pack(fill=tk.X, padx=10, pady=5)
-        tk.Label(info_frame, text="✨ Running Modular Architecture", 
-                font=("Arial", 10, "bold"), bg="lightblue").pack()
-        tk.Label(info_frame, text="Improved performance and maintainability", 
-                font=("Arial", 8), bg="lightblue").pack()
-        
-        # AI Model selection
-        tk.Label(settings_window, text="AI Model for Descriptions:").pack(pady=(10,0))
-        model_var = tk.StringVar(value=self.settings.get("ai_model", "qwen2.5:3b"))
-        
-        models_frame = tk.Frame(settings_window)
-        models_frame.pack(pady=5)
-        
-        tk.Radiobutton(models_frame, text="Qwen 2.5 (3B) - Fast", 
-                      variable=model_var, value="qwen2.5:3b").pack(anchor=tk.W)
-        tk.Radiobutton(models_frame, text="Mistral (7B) - Better", 
-                      variable=model_var, value="mistral:7b").pack(anchor=tk.W)
-        tk.Radiobutton(models_frame, text="Llama 3 (8B) - Best", 
-                      variable=model_var, value="llama3:8b").pack(anchor=tk.W)
-        
-        # Vision Model for conversion
-        tk.Label(settings_window, text="\nVision Model for Map Conversion:").pack()
-        vision_var = tk.StringVar(value=self.settings.get("vision_model", "llava:7b"))
-        
-        vision_frame = tk.Frame(settings_window)
-        vision_frame.pack(pady=5)
-        
-        tk.Radiobutton(vision_frame, text="LLaVA (7B) - Recommended", 
-                      variable=vision_var, value="llava:7b").pack(anchor=tk.W)
-        tk.Radiobutton(vision_frame, text="BakLLaVA (7B) - Alternative", 
-                      variable=vision_var, value="bakllava:7b").pack(anchor=tk.W)
-        
-        # Ollama server URL
-        tk.Label(settings_window, text="\nOllama Server URL:").pack()
-        url_entry = tk.Entry(settings_window, width=40)
-        url_entry.insert(0, self.settings.get("ollama_url", "http://localhost:11434"))
-        url_entry.pack()
-        
-        # Save button
-        def save_settings():
-            self.settings["ai_model"] = model_var.get()
-            self.settings["vision_model"] = vision_var.get()
-            self.settings["ollama_url"] = url_entry.get()
-            self.save_settings()
-            messagebox.showinfo("Success", "Settings saved!\nRestart the game to apply changes.")
-            settings_window.destroy()
-        
-        tk.Button(settings_window, text="Save Settings", 
-                 command=save_settings, bg="green", fg="white").pack(pady=10)
-        
-        tk.Button(settings_window, text="Cancel", 
-                 command=settings_window.destroy, bg="red", fg="white").pack()
-        
-        # Module status
-        status_frame = tk.Frame(settings_window)
-        status_frame.pack(pady=10)
-        
-        tk.Label(status_frame, text="Module Status:", font=("Arial", 9, "bold")).pack()
-        
-        # Check which modules are available
-        modules_status = []
-        try:
-            from core import HexMap
-            modules_status.append("✅ Core System")
-        except:
-            modules_status.append("❌ Core System")
-            
-        try:
-            from travel import TravelSystem
-            modules_status.append("✅ Travel System")
-        except:
-            modules_status.append("❌ Travel System")
-            
-        try:
-            from generation import OllamaClient
-            modules_status.append("✅ AI Generation")
-        except:
-            modules_status.append("❌ AI Generation")
-            
-        try:
-            from rendering import HexMapRenderer
-            modules_status.append("✅ Renderer")
-        except:
-            modules_status.append("❌ Renderer")
-        
-        status_text = " | ".join(modules_status)
-        tk.Label(status_frame, text=status_text, font=("Arial", 8)).pack()
-        
-        settings_window.mainloop()
-    
+        self.show_settings_screen()
+
     def load_settings(self):
         """Load settings from file"""
         try:
@@ -757,7 +862,7 @@ class MainMenu:
 
 def check_requirements():
     """Check if all required packages are installed"""
-    required = ["pygame", "requests", "PIL", "numpy", "tkinter"]
+    required = ["pygame", "requests", "PIL", "numpy"]
     missing = []
     
     for package in required:
