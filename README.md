@@ -81,7 +81,7 @@ The main menu provides access to:
 - **Import Map** - Load custom or generated maps with preview functionality
 - **Convert Image** - Transform image maps to hex format using AI
 - **Generate Realistic Map** - Create continent-style terrain maps
-- **Settings** - Configure AI models and game options
+- **Settings** - Configure AI models and game options using in-window dropdown menus
 
 ### Option 2: Direct Launch
 ```bash
