@@ -584,110 +584,118 @@ class MainMenu:
             return (0, 0, 0)
     
     def open_settings(self):
-        """Open settings dialog"""
-        self.show_settings_dialog()
-    
-    def show_settings_dialog(self):
-        """Show settings configuration dialog"""
-        settings_window = tk.Tk()
-        settings_window.title("Settings")
-        settings_window.geometry("400x350")
-        
-        # Title
-        tk.Label(settings_window, text="Game Settings", 
-                font=("Arial", 14, "bold")).pack(pady=10)
-        
-        # Modular system info
-        info_frame = tk.Frame(settings_window, bg="lightblue")
-        info_frame.pack(fill=tk.X, padx=10, pady=5)
-        tk.Label(info_frame, text="✨ Running Modular Architecture", 
-                font=("Arial", 10, "bold"), bg="lightblue").pack()
-        tk.Label(info_frame, text="Improved performance and maintainability", 
-                font=("Arial", 8), bg="lightblue").pack()
-        
-        # AI Model selection
-        tk.Label(settings_window, text="AI Model for Descriptions:").pack(pady=(10,0))
-        model_var = tk.StringVar(value=self.settings.get("ai_model", "qwen2.5:3b"))
-        
-        models_frame = tk.Frame(settings_window)
-        models_frame.pack(pady=5)
-        
-        tk.Radiobutton(models_frame, text="Qwen 2.5 (3B) - Fast", 
-                      variable=model_var, value="qwen2.5:3b").pack(anchor=tk.W)
-        tk.Radiobutton(models_frame, text="Mistral (7B) - Better", 
-                      variable=model_var, value="mistral:7b").pack(anchor=tk.W)
-        tk.Radiobutton(models_frame, text="Llama 3 (8B) - Best", 
-                      variable=model_var, value="llama3:8b").pack(anchor=tk.W)
-        
-        # Vision Model for conversion
-        tk.Label(settings_window, text="\nVision Model for Map Conversion:").pack()
-        vision_var = tk.StringVar(value=self.settings.get("vision_model", "llava:7b"))
-        
-        vision_frame = tk.Frame(settings_window)
-        vision_frame.pack(pady=5)
-        
-        tk.Radiobutton(vision_frame, text="LLaVA (7B) - Recommended", 
-                      variable=vision_var, value="llava:7b").pack(anchor=tk.W)
-        tk.Radiobutton(vision_frame, text="BakLLaVA (7B) - Alternative", 
-                      variable=vision_var, value="bakllava:7b").pack(anchor=tk.W)
-        
-        # Ollama server URL
-        tk.Label(settings_window, text="\nOllama Server URL:").pack()
-        url_entry = tk.Entry(settings_window, width=40)
-        url_entry.insert(0, self.settings.get("ollama_url", "http://localhost:11434"))
-        url_entry.pack()
-        
-        # Save button
-        def save_settings():
-            self.settings["ai_model"] = model_var.get()
-            self.settings["vision_model"] = vision_var.get()
-            self.settings["ollama_url"] = url_entry.get()
-            self.save_settings()
-            messagebox.showinfo("Success", "Settings saved!\nRestart the game to apply changes.")
-            settings_window.destroy()
-        
-        tk.Button(settings_window, text="Save Settings", 
-                 command=save_settings, bg="green", fg="white").pack(pady=10)
-        
-        tk.Button(settings_window, text="Cancel", 
-                 command=settings_window.destroy, bg="red", fg="white").pack()
-        
-        # Module status
-        status_frame = tk.Frame(settings_window)
-        status_frame.pack(pady=10)
-        
-        tk.Label(status_frame, text="Module Status:", font=("Arial", 9, "bold")).pack()
-        
-        # Check which modules are available
+        """Open settings screen"""
+        self.settings_menu()
+
+    def settings_menu(self):
+        """Display settings using the pygame window"""
+        ai_options = ["qwen2.5:3b", "mistral:7b", "llama3:8b"]
+        vision_options = ["llava:7b", "bakllava:7b"]
+        ai_index = ai_options.index(self.settings.get("ai_model", ai_options[0]))
+        vision_index = vision_options.index(self.settings.get("vision_model", vision_options[0]))
+        url_text = self.settings.get("ollama_url", "http://localhost:11434")
+        active_field = None
+
         modules_status = []
         try:
-            from core import HexMap
+            from core import HexMap  # noqa: F401
             modules_status.append("✅ Core System")
-        except:
+        except Exception:
             modules_status.append("❌ Core System")
-            
         try:
-            from travel import TravelSystem
+            from travel import TravelSystem  # noqa: F401
             modules_status.append("✅ Travel System")
-        except:
+        except Exception:
             modules_status.append("❌ Travel System")
-            
         try:
-            from generation import OllamaClient
+            from generation import OllamaClient  # noqa: F401
             modules_status.append("✅ AI Generation")
-        except:
+        except Exception:
             modules_status.append("❌ AI Generation")
-            
         try:
-            from rendering import HexMapRenderer
+            from rendering import HexMapRenderer  # noqa: F401
             modules_status.append("✅ Renderer")
-        except:
+        except Exception:
             modules_status.append("❌ Renderer")
-        
         status_text = " | ".join(modules_status)
-        tk.Label(status_frame, text=status_text, font=("Arial", 8)).pack()
-        
-        settings_window.mainloop()
+
+        running = True
+        while running and self.running:
+            title_surf = self.title_font.render("SETTINGS", True, self.title_color)
+            title_rect = title_surf.get_rect(center=(self.width // 2, int(self.height * 0.15)))
+
+            ai_label = f"AI Model: {ai_options[ai_index]}"
+            ai_surf = self.button_font.render(ai_label, True, self.button_text)
+            ai_rect = ai_surf.get_rect(center=(self.width // 2, int(self.height * 0.35)))
+
+            vision_label = f"Vision Model: {vision_options[vision_index]}"
+            vision_surf = self.button_font.render(vision_label, True, self.button_text)
+            vision_rect = vision_surf.get_rect(center=(self.width // 2, int(self.height * 0.45)))
+
+            cursor = "|" if active_field == "url" and (pygame.time.get_ticks() // 500) % 2 == 0 else ""
+            url_label = f"Ollama URL: {url_text}{cursor}"
+            url_surf = self.button_font.render(url_label, True, self.button_text)
+            url_rect = url_surf.get_rect(center=(self.width // 2, int(self.height * 0.55)))
+
+            save_surf = self.button_font.render("Save", True, self.button_text)
+            save_rect = save_surf.get_rect(center=(self.width // 2 - 100, int(self.height * 0.75)))
+            save_box = save_rect.inflate(40, 20)
+
+            cancel_surf = self.button_font.render("Cancel", True, self.button_text)
+            cancel_rect = cancel_surf.get_rect(center=(self.width // 2 + 100, int(self.height * 0.75)))
+            cancel_box = cancel_rect.inflate(40, 20)
+
+            status_surf = self.desc_font.render(status_text, True, self.desc_color)
+            status_rect = status_surf.get_rect(center=(self.width // 2, int(self.height * 0.9)))
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.quit_game()
+                elif event.type == pygame.VIDEORESIZE:
+                    self.handle_resize(event)
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                    elif active_field == "url":
+                        if event.key == pygame.K_RETURN:
+                            active_field = None
+                        elif event.key == pygame.K_BACKSPACE:
+                            url_text = url_text[:-1]
+                        else:
+                            url_text += event.unicode
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    mx, my = event.pos
+                    if ai_rect.collidepoint(mx, my):
+                        ai_index = (ai_index + 1) % len(ai_options)
+                    elif vision_rect.collidepoint(mx, my):
+                        vision_index = (vision_index + 1) % len(vision_options)
+                    elif url_rect.collidepoint(mx, my):
+                        active_field = "url"
+                    elif save_box.collidepoint(mx, my):
+                        self.settings["ai_model"] = ai_options[ai_index]
+                        self.settings["vision_model"] = vision_options[vision_index]
+                        self.settings["ollama_url"] = url_text
+                        self.save_settings()
+                        running = False
+                    elif cancel_box.collidepoint(mx, my):
+                        running = False
+
+            self.screen.fill(self.bg_color)
+            self.screen.blit(title_surf, title_rect)
+            self.screen.blit(ai_surf, ai_rect)
+            self.screen.blit(vision_surf, vision_rect)
+            self.screen.blit(url_surf, url_rect)
+
+            pygame.draw.rect(self.screen, self.button_color, save_box)
+            self.screen.blit(save_surf, save_rect)
+
+            pygame.draw.rect(self.screen, self.button_color, cancel_box)
+            self.screen.blit(cancel_surf, cancel_rect)
+
+            self.screen.blit(status_surf, status_rect)
+
+            pygame.display.flip()
+            self.clock.tick(60)
     
     def load_settings(self):
         """Load settings from file"""
