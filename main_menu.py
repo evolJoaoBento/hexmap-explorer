@@ -102,10 +102,19 @@ class MainMenu:
         # Selected button
         self.selected_button = None
         self.hover_button = None
-        
+
         # Settings
+        self.available_modules = [
+            "config",
+            "core",
+            "travel",
+            "generation",
+            "rendering",
+            "application",
+            "utils",
+        ]
         self.settings = self.load_settings()
-        
+
         self.running = True
     
     def update_font_sizes(self):
@@ -473,6 +482,8 @@ class MainMenu:
 
     def show_settings_screen(self):
         """In-window settings configuration"""
+        modules = self.settings.get(
+            "modules", {m: True for m in self.available_modules})
         options = [
             ("AI Model", ["qwen2.5:3b", "mistral:7b", "llama3:8b"],
              self.settings.get("ai_model", "qwen2.5:3b")),
@@ -480,6 +491,8 @@ class MainMenu:
              self.settings.get("vision_model", "llava:7b")),
             ("Ollama URL", None,
              self.settings.get("ollama_url", "http://localhost:11434")),
+            ("Core Modules", None,
+             ", ".join([m for m in self.available_modules if modules.get(m)]) or "None"),
         ]
         index = 0
         pygame.key.start_text_input()
@@ -511,12 +524,24 @@ class MainMenu:
                             val = val[:-1]
                             options[index] = (name, vals, val)
                         elif event.key == pygame.K_RETURN:
-                            self.settings["ai_model"] = options[0][2]
-                            self.settings["vision_model"] = options[1][2]
-                            self.settings["ollama_url"] = options[2][2]
-                            self.save_settings()
-                            self.show_message("Settings", "Settings saved.")
-                            return
+                            if index == 3:
+                                modules = self.show_modules_screen(modules)
+                                self.settings["modules"] = modules
+                                options[3] = (
+                                    "Core Modules",
+                                    None,
+                                    ", ".join([
+                                        m for m in self.available_modules if modules.get(m)
+                                    ]) or "None",
+                                )
+                            else:
+                                self.settings["ai_model"] = options[0][2]
+                                self.settings["vision_model"] = options[1][2]
+                                self.settings["ollama_url"] = options[2][2]
+                                self.settings["modules"] = modules
+                                self.save_settings()
+                                self.show_message("Settings", "Settings saved.")
+                                return
                         else:
                             if index == 2 and event.unicode.isprintable():
                                 name, vals, val = options[index]
@@ -525,29 +550,75 @@ class MainMenu:
 
                 self.draw_background()
                 title = self.title_font.render("Settings", True, self.title_color)
-                self.screen.blit(title,
-                                 title.get_rect(center=(self.width // 2,
-                                                        self.height * 0.15)))
+                self.screen.blit(
+                    title,
+                    title.get_rect(
+                        center=(self.width // 2, self.height * 0.15)
+                    ),
+                )
 
                 start_y = self.height * 0.3
                 for i, (name, vals, val) in enumerate(options):
                     color = self.title_color if i == index else self.button_text
                     text = self.button_font.render(f"{name}: {val}", True, color)
-                    rect = text.get_rect(center=(self.width // 2,
-                                                 start_y + i * self.button_font.get_height() * 1.4))
+                    rect = text.get_rect(
+                        center=(
+                            self.width // 2,
+                            start_y + i * self.button_font.get_height() * 1.4,
+                        )
+                    )
                     self.screen.blit(text, rect)
 
                 hint = self.version_font.render(
-                    "Arrows to change, Enter to save, Esc to cancel",
-                    True, self.desc_color)
-                self.screen.blit(hint,
-                                 hint.get_rect(center=(self.width // 2,
-                                                       self.height * 0.9)))
+                    "Arrows to change, Enter to save/edit, Esc to cancel",
+                    True,
+                    self.desc_color,
+                )
+                self.screen.blit(
+                    hint,
+                    hint.get_rect(center=(self.width // 2, self.height * 0.9)),
+                )
 
                 pygame.display.flip()
         finally:
             pygame.key.stop_text_input()
-    
+
+    def show_modules_screen(self, current):
+        """Toggle core modules inside the app"""
+        status = current.copy()
+        index = 0
+        while True:
+            self.clock.tick(60)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.quit_game()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return status
+                    elif event.key in (pygame.K_UP, pygame.K_w):
+                        index = (index - 1) % len(self.available_modules)
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        index = (index + 1) % len(self.available_modules)
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        mod = self.available_modules[index]
+                        status[mod] = not status.get(mod, True)
+            self.draw_background()
+            title = self.title_font.render("Core Modules", True, self.title_color)
+            self.screen.blit(title, title.get_rect(center=(self.width // 2, self.height * 0.15)))
+            start_y = self.height * 0.3
+            for i, mod in enumerate(self.available_modules):
+                enabled = status.get(mod, True)
+                prefix = "[X]" if enabled else "[ ]"
+                color = self.title_color if i == index else self.button_text
+                text = self.button_font.render(f"{prefix} {mod}", True, color)
+                rect = text.get_rect(center=(self.width // 2,
+                                             start_y + i * self.button_font.get_height() * 1.3))
+                self.screen.blit(text, rect)
+            hint = self.version_font.render("Enter/Space to toggle, Esc to return",
+                                            True, self.desc_color)
+            self.screen.blit(hint, hint.get_rect(center=(self.width // 2, self.height * 0.9)))
+            pygame.display.flip()
+
     def start_new_game(self):
         """Start a new hex map adventure using modular system"""
         print("Starting new adventure with modular system...")
@@ -798,14 +869,14 @@ class MainMenu:
         """Load settings from file"""
         try:
             with open("settings.json", "r") as f:
-                return json.load(f)
-        except:
-            # Default settings
-            return {
-                "ai_model": "qwen2.5:3b",
-                "vision_model": "llava:7b",
-                "ollama_url": "http://localhost:11434"
-            }
+                data = json.load(f)
+        except Exception:
+            data = {}
+        data.setdefault("ai_model", "qwen2.5:3b")
+        data.setdefault("vision_model", "llava:7b")
+        data.setdefault("ollama_url", "http://localhost:11434")
+        data.setdefault("modules", {m: True for m in self.available_modules})
+        return data
     
     def save_settings(self):
         """Save settings to file"""
