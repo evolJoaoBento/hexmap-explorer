@@ -595,6 +595,14 @@ class MainMenu:
         vision_index = vision_options.index(self.settings.get("vision_model", vision_options[0]))
         url_text = self.settings.get("ollama_url", "http://localhost:11434")
         active_field = None
+        show_ai = False
+        show_vision = False
+
+        def draw_button(rect, text, hovered):
+            pygame.draw.rect(self.screen, self.button_hover if hovered else self.button_color, rect)
+            pygame.draw.rect(self.screen, self.title_color if hovered else (100, 100, 100), rect, 2)
+            surf = self.button_font.render(text, True, self.button_text)
+            self.screen.blit(surf, surf.get_rect(center=rect.center))
 
         modules_status = []
         try:
@@ -624,29 +632,21 @@ class MainMenu:
             title_surf = self.title_font.render("SETTINGS", True, self.title_color)
             title_rect = title_surf.get_rect(center=(self.width // 2, int(self.height * 0.15)))
 
-            ai_label = f"AI Model: {ai_options[ai_index]}"
-            ai_surf = self.button_font.render(ai_label, True, self.button_text)
-            ai_rect = ai_surf.get_rect(center=(self.width // 2, int(self.height * 0.35)))
+            bw = int(self.width * 0.375)
+            bh = int(self.height * 0.07)
+            x = self.width // 2 - bw // 2
+            start_y = int(self.height * 0.3)
 
-            vision_label = f"Vision Model: {vision_options[vision_index]}"
-            vision_surf = self.button_font.render(vision_label, True, self.button_text)
-            vision_rect = vision_surf.get_rect(center=(self.width // 2, int(self.height * 0.45)))
-
-            cursor = "|" if active_field == "url" and (pygame.time.get_ticks() // 500) % 2 == 0 else ""
-            url_label = f"Ollama URL: {url_text}{cursor}"
-            url_surf = self.button_font.render(url_label, True, self.button_text)
-            url_rect = url_surf.get_rect(center=(self.width // 2, int(self.height * 0.55)))
-
-            save_surf = self.button_font.render("Save", True, self.button_text)
-            save_rect = save_surf.get_rect(center=(self.width // 2 - 100, int(self.height * 0.75)))
-            save_box = save_rect.inflate(40, 20)
-
-            cancel_surf = self.button_font.render("Cancel", True, self.button_text)
-            cancel_rect = cancel_surf.get_rect(center=(self.width // 2 + 100, int(self.height * 0.75)))
-            cancel_box = cancel_rect.inflate(40, 20)
+            ai_rect = pygame.Rect(x, start_y, bw, bh)
+            vision_rect = pygame.Rect(x, start_y + bh + 20, bw, bh)
+            url_rect = pygame.Rect(x, start_y + 2 * (bh + 20), bw, bh)
+            save_rect = pygame.Rect(self.width // 2 - bw // 2, start_y + 3 * (bh + 20), bw // 2 - 10, bh)
+            cancel_rect = pygame.Rect(self.width // 2 + 10, start_y + 3 * (bh + 20), bw // 2 - 10, bh)
 
             status_surf = self.desc_font.render(status_text, True, self.desc_color)
             status_rect = status_surf.get_rect(center=(self.width // 2, int(self.height * 0.9)))
+
+            mouse_pos = pygame.mouse.get_pos()
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -665,35 +665,67 @@ class MainMenu:
                             url_text += event.unicode
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mx, my = event.pos
+                    if show_ai:
+                        option_rects = [pygame.Rect(ai_rect.x, ai_rect.bottom + i * bh, bw, bh) for i in range(len(ai_options))]
+                        for i, r in enumerate(option_rects):
+                            if r.collidepoint(mx, my):
+                                ai_index = i
+                                show_ai = False
+                                break
+                    if show_vision:
+                        option_rects = [pygame.Rect(vision_rect.x, vision_rect.bottom + i * bh, bw, bh) for i in range(len(vision_options))]
+                        for i, r in enumerate(option_rects):
+                            if r.collidepoint(mx, my):
+                                vision_index = i
+                                show_vision = False
+                                break
                     if ai_rect.collidepoint(mx, my):
-                        ai_index = (ai_index + 1) % len(ai_options)
+                        show_ai = not show_ai
+                        show_vision = False
                     elif vision_rect.collidepoint(mx, my):
-                        vision_index = (vision_index + 1) % len(vision_options)
+                        show_vision = not show_vision
+                        show_ai = False
                     elif url_rect.collidepoint(mx, my):
                         active_field = "url"
-                    elif save_box.collidepoint(mx, my):
+                        show_ai = show_vision = False
+                    elif save_rect.collidepoint(mx, my):
                         self.settings["ai_model"] = ai_options[ai_index]
                         self.settings["vision_model"] = vision_options[vision_index]
                         self.settings["ollama_url"] = url_text
                         self.save_settings()
                         running = False
-                    elif cancel_box.collidepoint(mx, my):
+                    elif cancel_rect.collidepoint(mx, my):
                         running = False
+                    else:
+                        show_ai = show_vision = False
 
             self.screen.fill(self.bg_color)
             self.screen.blit(title_surf, title_rect)
-            self.screen.blit(ai_surf, ai_rect)
-            self.screen.blit(vision_surf, vision_rect)
-            self.screen.blit(url_surf, url_rect)
 
-            pygame.draw.rect(self.screen, self.button_color, save_box)
-            self.screen.blit(save_surf, save_rect)
+            ai_label = f"AI Model: {ai_options[ai_index]} {'▲' if show_ai else '▼'}"
+            vision_label = f"Vision Model: {vision_options[vision_index]} {'▲' if show_vision else '▼'}"
+            cursor = "|" if active_field == "url" and (pygame.time.get_ticks() // 500) % 2 == 0 else ""
+            url_label = f"Ollama URL: {url_text}{cursor}"
 
-            pygame.draw.rect(self.screen, self.button_color, cancel_box)
-            self.screen.blit(cancel_surf, cancel_rect)
+            draw_button(ai_rect, ai_label, ai_rect.collidepoint(mouse_pos) or show_ai)
+            if show_ai:
+                for i, opt in enumerate(ai_options):
+                    r = pygame.Rect(ai_rect.x, ai_rect.bottom + i * bh, bw, bh)
+                    draw_button(r, opt, r.collidepoint(mouse_pos))
+
+            draw_button(vision_rect, vision_label, vision_rect.collidepoint(mouse_pos) or show_vision)
+            if show_vision:
+                for i, opt in enumerate(vision_options):
+                    r = pygame.Rect(vision_rect.x, vision_rect.bottom + i * bh, bw, bh)
+                    draw_button(r, opt, r.collidepoint(mouse_pos))
+
+            hovered_url = url_rect.collidepoint(mouse_pos) or active_field == "url"
+            draw_button(url_rect, url_label, hovered_url)
+
+            draw_button(save_rect, "Save", save_rect.collidepoint(mouse_pos))
+            draw_button(cancel_rect, "Cancel", cancel_rect.collidepoint(mouse_pos))
 
             self.screen.blit(status_surf, status_rect)
-
             pygame.display.flip()
             self.clock.tick(60)
     
