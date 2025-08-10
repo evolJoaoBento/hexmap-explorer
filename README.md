@@ -42,7 +42,7 @@ A modular D&D 5e-compatible hex-based exploration tool with AI-generated descrip
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/yourusername/hexcrawl.git
+git clone https://github.com/evolJoaoBento/hexcrawl.git
 cd hexcrawl
 ```
 
