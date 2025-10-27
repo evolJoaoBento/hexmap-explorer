@@ -13,11 +13,15 @@ class Hex:
     r: int
     s: int
     terrain: str
-    description: str
+    description: str = ""
+    biome: str = "temperate"
+    elevation: int = 0
     explored: bool = False
     visible: bool = False
     generating: bool = False
     distance_from_current: int = 999
+    has_location: bool = False
+    location_name: str = ""
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization"""
@@ -34,12 +38,22 @@ class Hex:
         hex_data = data.copy()
         
         # Set defaults for missing fields
+        hex_data.setdefault('description', '')
+        hex_data.setdefault('biome', 'temperate')
+        hex_data.setdefault('elevation', 0)
         hex_data.setdefault('generating', False)
         hex_data.setdefault('distance_from_current', 999)
         hex_data.setdefault('explored', False)
         hex_data.setdefault('visible', False)
+        hex_data.setdefault('has_location', False)
+        hex_data.setdefault('location_name', '')
         
-        return cls(**hex_data)
+        # Filter out any unexpected fields
+        import inspect
+        valid_fields = set(inspect.signature(cls).parameters.keys())
+        filtered_data = {k: v for k, v in hex_data.items() if k in valid_fields}
+        
+        return cls(**filtered_data)
     
     def __str__(self):
         return f"Hex({self.q}, {self.r}, {self.s}) - {self.terrain}"

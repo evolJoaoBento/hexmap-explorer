@@ -1,8 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python:*)"
+      "Bash(git push)",
+      "Bash(git remote:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Read(//c/Users/joaoo/2075/**)",
+      "Bash(git init:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: Obsidian Physical Dice Plugin\n\nA 3D dice roller plugin for Obsidian with multiplayer dice chat support.\n\nFeatures:\n- Interactive 3D dice physics using Three.js and Cannon-es\n- Support for d4, d6, d8, d10, d12, and d20\n- Multiplayer dice chat with DM/Player roles\n- Real-time dice requests and results\n- Caught dice detection with reroll functionality\n- View lifecycle management to prevent background loops\n\nRecent improvements:\n- Fixed infinite animation/monitoring loops when view closes\n- Added isViewActive flag to properly stop all background processes\n- All loops (animation, physics, monitoring) now stop immediately on view close\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git branch:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(git commit:*)",
+      "Bash(git fetch:*)",
+      "Bash(git add:*)"
     ],
-    "deny": []
+    "deny": [],
+    "ask": [],
+    "defaultMode": "acceptEdits"
   }
 }

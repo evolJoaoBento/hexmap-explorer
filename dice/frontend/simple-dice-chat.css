@@ -1,0 +1,563 @@
+/**
+ * Simple Dice Chat Interface Styles
+ * Clean, modern interface for dice rolling and chat
+ */
+
+.simple-dice-chat {
+    display: flex;
+    flex-direction: column;
+    height: 500px;
+    width: 100%;
+    max-width: 400px;
+    border: 1px solid #e1e8ed;
+    border-radius: 12px;
+    background: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+/* Header */
+.chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: #1da1f2;
+    color: white;
+}
+
+.header-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.room-info {
+    font-size: 11px;
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    cursor: help;
+}
+
+.chat-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.status {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.status.connected {
+    background: #17bf63;
+}
+
+.status.disconnected {
+    background: #e1306c;
+}
+
+/* Messages Area */
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    background: #f8f9fa;
+}
+
+.messages-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Message Styles */
+.message {
+    max-width: 85%;
+    word-wrap: break-word;
+}
+
+.message.own-message {
+    align-self: flex-end;
+}
+
+.message.own-message .message-content {
+    background: #1da1f2;
+    color: white;
+}
+
+.message-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: #657786;
+}
+
+.sender {
+    font-weight: 600;
+    color: #1da1f2;
+}
+
+.timestamp {
+    color: #aab8c2;
+}
+
+.badge {
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge.request {
+    background: #ff6b35;
+    color: white;
+}
+
+.badge.result {
+    background: #17bf63;
+    color: white;
+}
+
+.message-content {
+    padding: 8px 12px;
+    border-radius: 18px;
+    background: #ffffff;
+    color: #14171a;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.message-content.dice-request {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+}
+
+.message-content.dice-response {
+    background: #d4edda;
+    border-left: 4px solid #28a745;
+}
+
+/* Special styling for dice request and result messages */
+.message.dice-request .message-content {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    font-weight: 500;
+}
+
+.message.dice-result .message-content {
+    background: #d4edda;
+    border-left: 4px solid #28a745;
+    font-weight: 500;
+}
+
+/* Clickable dice request styling */
+.message-content.clickable-request {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.message-content.clickable-request:hover {
+    background: #fff2b3 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+}
+
+.click-hint {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #856404;
+    font-style: italic;
+    text-align: center;
+    padding: 4px;
+    background: rgba(255, 193, 7, 0.1);
+    border-radius: 8px;
+}
+
+/* Targeted request styling */
+.message-content.targeted-request {
+    border-left: 4px solid #e91e63 !important;
+    background: #fce4ec !important;
+}
+
+.not-for-you {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #ad1457;
+    font-style: italic;
+    text-align: center;
+    padding: 4px;
+    background: rgba(233, 30, 99, 0.1);
+    border-radius: 8px;
+}
+
+.badge.request {
+    background: #ff6b35;
+    color: white;
+}
+
+/* Different color for targeted requests */
+.badge:contains("Targeted") {
+    background: #e91e63 !important;
+}
+
+/* Pending Requests */
+.pending-requests {
+    background: #fff8e1;
+    border-top: 1px solid #ffcc02;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.requests-header {
+    padding: 8px 16px;
+    background: #ffcc02;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+/* Input Area */
+.input-area {
+    border-top: 1px solid #e1e8ed;
+    padding: 12px 16px;
+    background: white;
+}
+
+.message-input-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.message-input-row input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #e1e8ed;
+    border-radius: 20px;
+    outline: none;
+}
+
+.message-input-row input:focus {
+    border-color: #1da1f2;
+    box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.2);
+}
+
+.dm-actions, .player-actions {
+    display: flex;
+    justify-content: center;
+}
+
+/* Buttons */
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.btn-primary {
+    background: #1da1f2;
+    color: white;
+}
+
+.btn-secondary {
+    background: #657786;
+    color: white;
+}
+
+.btn-send {
+    background: #17bf63;
+    color: white;
+    padding: 8px 16px;
+}
+
+.btn-dice {
+    background: #ff6b35;
+    color: white;
+    font-size: 14px;
+    padding: 10px 20px;
+}
+
+.btn-sm {
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+.respond-btn {
+    margin-top: 8px;
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e1e8ed;
+    background: #f8f9fa;
+    border-radius: 12px 12px 0 0;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: #14171a;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #657786;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-btn:hover {
+    color: #14171a;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    padding: 16px 20px;
+    border-top: 1px solid #e1e8ed;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Dice Selection */
+.request-details {
+    background: #f8f9fa;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.dice-selection h4 {
+    margin: 0 0 16px 0;
+    color: #14171a;
+}
+
+.dice-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.dice-type {
+    text-align: center;
+}
+
+.die-button {
+    width: 60px;
+    height: 60px;
+    border: 2px solid #1da1f2;
+    border-radius: 12px;
+    background: white;
+    color: #1da1f2;
+    font-weight: bold;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.die-button:hover {
+    background: #1da1f2;
+    color: white;
+    transform: scale(1.05);
+}
+
+.die-count {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.count-btn {
+    width: 24px;
+    height: 24px;
+    border: 1px solid #e1e8ed;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 14px;
+    color: #657786;
+}
+
+.count-btn:hover {
+    background: #f8f9fa;
+    border-color: #1da1f2;
+    color: #1da1f2;
+}
+
+.count {
+    min-width: 20px;
+    text-align: center;
+    font-weight: bold;
+    color: #14171a;
+}
+
+.modifier-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.modifier-section label {
+    font-weight: 600;
+    color: #14171a;
+}
+
+.modifier-section input {
+    width: 80px;
+    padding: 6px 8px;
+    border: 1px solid #e1e8ed;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.expression-preview {
+    background: #e3f2fd;
+    padding: 12px;
+    border-radius: 8px;
+    text-align: center;
+    font-weight: bold;
+    color: #1976d2;
+}
+
+.expression-preview span {
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 16px;
+}
+
+/* Scrollbar */
+.messages-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.messages-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+    background: #aab8c2;
+    border-radius: 3px;
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover {
+    background: #657786;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .simple-dice-chat {
+        height: 100vh;
+        max-width: 100%;
+        border-radius: 0;
+    }
+
+    .dice-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .modal-content {
+        width: 95%;
+        margin: 10px;
+    }
+}
+
+/* Animation */
+.message {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Dice type colors */
+.dice-type[data-die="d4"] .die-button { border-color: #e74c3c; color: #e74c3c; }
+.dice-type[data-die="d4"] .die-button:hover { background: #e74c3c; }
+
+.dice-type[data-die="d6"] .die-button { border-color: #f39c12; color: #f39c12; }
+.dice-type[data-die="d6"] .die-button:hover { background: #f39c12; }
+
+.dice-type[data-die="d8"] .die-button { border-color: #17bf63; color: #17bf63; }
+.dice-type[data-die="d8"] .die-button:hover { background: #17bf63; }
+
+.dice-type[data-die="d10"] .die-button { border-color: #1da1f2; color: #1da1f2; }
+.dice-type[data-die="d10"] .die-button:hover { background: #1da1f2; }
+
+.dice-type[data-die="d12"] .die-button { border-color: #9b59b6; color: #9b59b6; }
+.dice-type[data-die="d12"] .die-button:hover { background: #9b59b6; }
+
+.dice-type[data-die="d20"] .die-button { border-color: #e1306c; color: #e1306c; }
+.dice-type[data-die="d20"] .die-button:hover { background: #e1306c; }

@@ -1,11 +1,12 @@
-# Create .gitignore to prevent future clutter
-@'
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+env/
+venv/
+ENV/
 build/
 develop-eggs/
 dist/
@@ -22,16 +23,24 @@ wheels/
 .installed.cfg
 *.egg
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Environments
+# Environment and Secrets
 .env
-.venv
-env/
-venv/
-ENV/
+.env.local
+.env.*.local
+secrets/
+*.key
+*.pem
+*.crt
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# Logs
+logs/
+*.log
 
 # IDE
 .vscode/
@@ -40,24 +49,29 @@ ENV/
 *.swo
 *~
 
+# Testing
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+
 # OS
 .DS_Store
 Thumbs.db
 
-# Project specific
-*.lnk
-*.bat
-*.vbs
-*.ps1
-settings.json
-test_*.py
-debug_*.py
-temp_*
-*_test.*
+# Application specific
+maps/*.json
+!maps/example.json
+screenshots/
+temp/
+uploads/
 
-# Keep only essential icons
-# hex_explorer_icon_*.png are kept
-# hex_explorer.ico is kept
-'@ | Out-File -FilePath ".gitignore" -Encoding UTF8
+# Security
+*.key
+*.cert
+ssl/
 
-Write-Host "✅ Created .gitignore"
+# Backup files
+*.bak
+*.backup
+*~nul

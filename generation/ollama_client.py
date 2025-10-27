@@ -2,6 +2,8 @@
 Ollama API client for description generation
 """
 import requests
+import os
+import json
 import random
 from typing import Tuple
 from config.constants import TERRAIN_TYPES, OLLAMA_DEFAULT_URL, OLLAMA_DEFAULT_MODEL, GENERATION_TIMEOUT
@@ -11,8 +13,21 @@ class OllamaClient:
     """Client for Ollama API with synchronous generation"""
     
     def __init__(self, base_url=OLLAMA_DEFAULT_URL):
-        self.base_url = base_url
-        self.model = OLLAMA_DEFAULT_MODEL
+        # Allow configuration via settings.json if present
+        settings_base_url = None
+        settings_model = None
+        try:
+            settings_path = os.path.join(os.getcwd(), "settings.json")
+            if os.path.exists(settings_path):
+                with open(settings_path, "r") as f:
+                    data = json.load(f) or {}
+                    settings_base_url = data.get("ollama_url")
+                    settings_model = data.get("ai_model")
+        except Exception:
+            pass
+
+        self.base_url = settings_base_url or base_url
+        self.model = settings_model or OLLAMA_DEFAULT_MODEL
         self.description_cache = {}
         self.session = requests.Session()
         self.ollama_available = self.check_ollama()

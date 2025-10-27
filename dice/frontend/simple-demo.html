@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Dice Chat Demo</title>
+    <link rel="stylesheet" href="dice-chat/simple-dice-chat.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .demo-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .demo-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 30px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            color: #333;
+        }
+
+        .demo-header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.5rem;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .demo-header p {
+            margin: 0;
+            font-size: 1.2rem;
+            opacity: 0.8;
+        }
+
+        .demo-clients {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .client-panel {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .client-panel:hover {
+            transform: translateY(-5px);
+        }
+
+        .client-header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .client-title {
+            font-size: 1.5rem;
+            margin: 0 0 10px 0;
+            font-weight: 700;
+        }
+
+        .dm-title {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .player-title {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .connection-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .connection-form input {
+            padding: 12px 16px;
+            border: 2px solid #e1e8ed;
+            border-radius: 25px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .connection-form input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .connect-btn {
+            padding: 12px 24px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .connect-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .connect-btn:disabled {
+            background: #aab8c2;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .chat-container {
+            display: flex;
+            justify-content: center;
+        }
+
+        .instructions {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .instructions h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+        }
+
+        .instructions ol {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .instructions li {
+            margin-bottom: 8px;
+            color: #666;
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 8px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .quick-btn {
+            padding: 6px 12px;
+            background: #f8f9fa;
+            border: 1px solid #e1e8ed;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .quick-btn:hover {
+            background: #e9ecef;
+            transform: scale(1.05);
+        }
+
+        @media (max-width: 768px) {
+            .demo-clients {
+                grid-template-columns: 1fr;
+            }
+
+            .demo-header h1 {
+                font-size: 2rem;
+            }
+
+            .client-panel {
+                padding: 20px;
+            }
+        }
+
+        .status-connected {
+            color: #17bf63;
+            font-weight: 600;
+        }
+
+        .status-disconnected {
+            color: #e74c3c;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <div class="demo-header">
+            <h1>🎲 Simple Dice Chat</h1>
+            <p>Connect as DM or Player and start rolling!</p>
+            <div id="sessionInfo" style="margin-top: 15px; padding: 10px; background: rgba(102, 126, 234, 0.1); border-radius: 10px; display: none;">
+                <strong>Session ID:</strong> <code id="currentSessionId" style="user-select: all; padding: 2px 6px; background: white; border-radius: 4px;">Not connected</code>
+                <button onclick="copySessionId()" style="margin-left: 10px; padding: 4px 8px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">📋 Copy</button>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h3>📋 How to Use:</h3>
+            <ol>
+                <li><strong>Connect both clients</strong> - Enter usernames and click "Connect"</li>
+                <li><strong>DM requests dice rolls</strong> - Click "🎲 Request Dice Roll" and select dice</li>
+                <li><strong>Player responds</strong> - Click "🎲 Roll Dice" to roll selected dice</li>
+                <li><strong>Chat together</strong> - Send messages and see dice results in real-time</li>
+            </ol>
+        </div>
+
+        <div class="demo-clients">
+            <!-- DM Client -->
+            <div class="client-panel">
+                <div class="client-header">
+                    <h2 class="client-title dm-title">🎭 Dungeon Master</h2>
+                    <div id="dmStatus" class="status-disconnected">Disconnected</div>
+                </div>
+
+                <div class="connection-form" id="dmConnectionForm">
+                    <input type="text" id="dmUsername" placeholder="DM Username" value="GameMaster">
+                    <input type="text" id="dmRoomId" placeholder="Room ID (leave empty for new room)" style="margin-top: 10px;">
+                    <button class="connect-btn" onclick="connectDM()" id="dmConnectBtn">Connect as DM</button>
+                </div>
+
+
+                <div class="chat-container">
+                    <div id="dmChatContainer"></div>
+                </div>
+            </div>
+
+            <!-- Player Client -->
+            <div class="client-panel">
+                <div class="client-header">
+                    <h2 class="client-title player-title">⚔️ Player</h2>
+                    <div id="playerStatus" class="status-disconnected">Disconnected</div>
+                </div>
+
+                <div class="connection-form" id="playerConnectionForm">
+                    <input type="text" id="playerUsername" placeholder="Player Username" value="Aragorn">
+                    <input type="text" id="playerRoomId" placeholder="Room ID (paste from DM or leave empty)" style="margin-top: 10px;">
+                    <button class="connect-btn" onclick="connectPlayer()" id="playerConnectBtn">Connect as Player</button>
+                </div>
+
+
+                <div class="chat-container">
+                    <div id="playerChatContainer"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="dice-chat/auth-helper.js"></script>
+    <script src="dice-chat/simple-dice-chat.js"></script>
+    <script>
+        let dmChat = null;
+        let playerChat = null;
+        let currentSessionId = null;
+        let authHelper = null;
+        let authToken = null;
+
+        function connectDM() {
+            const username = document.getElementById('dmUsername').value.trim();
+            const roomId = document.getElementById('dmRoomId').value.trim();
+
+            if (!username) {
+                alert('Please enter a username!');
+                return;
+            }
+
+            // Hide connection form
+            document.getElementById('dmConnectionForm').style.display = 'none';
+
+            // Initialize chat
+            const container = document.getElementById('dmChatContainer');
+            dmChat = new SimpleDiceChatInterface(container, {
+                apiBaseUrl: window.location.origin,
+                userRole: 'dm',
+                roomId: roomId || undefined,  // Will generate new if not provided
+                authToken: authToken  // Pass auth token
+            });
+
+            dmChat.connect(username, 'dm', roomId || null);
+
+            // Show session info
+            currentSessionId = dmChat.getRoom();
+            document.getElementById('currentSessionId').textContent = currentSessionId;
+            document.getElementById('sessionInfo').style.display = 'block';
+
+            // Set global reference
+            if (!window.currentChat) window.currentChat = dmChat;
+
+            // Update status
+            document.getElementById('dmStatus').textContent = 'Connected';
+            document.getElementById('dmStatus').className = 'status-connected';
+        }
+
+        function connectPlayer() {
+            const username = document.getElementById('playerUsername').value.trim();
+            const roomId = document.getElementById('playerRoomId').value.trim();
+
+            if (!username) {
+                alert('Please enter a username!');
+                return;
+            }
+
+            // Use existing session if available, otherwise use provided room
+            const targetRoom = roomId || currentSessionId;
+
+            if (!targetRoom) {
+                alert('Please enter a Room ID or connect as DM first to create a room!');
+                return;
+            }
+
+            // Hide connection form
+            document.getElementById('playerConnectionForm').style.display = 'none';
+
+            // Initialize chat
+            const container = document.getElementById('playerChatContainer');
+            playerChat = new SimpleDiceChatInterface(container, {
+                apiBaseUrl: window.location.origin,
+                userRole: 'player',
+                roomId: targetRoom,
+                authToken: authToken  // Pass auth token
+            });
+
+            playerChat.connect(username, 'player', targetRoom);
+
+            // Update session info if not already shown
+            if (!currentSessionId) {
+                currentSessionId = targetRoom;
+                document.getElementById('currentSessionId').textContent = currentSessionId;
+                document.getElementById('sessionInfo').style.display = 'block';
+            }
+
+            // Set global reference if not set
+            if (!window.currentChat) window.currentChat = playerChat;
+
+            // Update status
+            document.getElementById('playerStatus').textContent = 'Connected';
+            document.getElementById('playerStatus').className = 'status-connected';
+        }
+
+        function dmQuickMessage(message) {
+            if (dmChat) {
+                const input = dmChat.container.querySelector('#messageInput');
+                if (input) {
+                    input.value = message;
+                    dmChat.sendMessage();
+                }
+            }
+        }
+
+        function playerQuickMessage(message) {
+            if (playerChat) {
+                const input = playerChat.container.querySelector('#messageInput');
+                if (input) {
+                    input.value = message;
+                    playerChat.sendMessage();
+                }
+            }
+        }
+
+        function copySessionId() {
+            const sessionId = document.getElementById('currentSessionId').textContent;
+            navigator.clipboard.writeText(sessionId).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            }).catch(err => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = sessionId;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+
+        // Initialize authentication
+        document.addEventListener('DOMContentLoaded', async () => {
+            authHelper = new AuthHelper(window.location.origin);
+
+            // Check for existing authentication
+            const authCheck = await authHelper.checkAuth();
+
+            if (!authCheck.authenticated) {
+                // Show login modal
+                console.log('Authentication required - showing login modal');
+                authHelper.showLoginModal();
+
+                // Set up auth success handler
+                window.onAuthSuccess = (token) => {
+                    authToken = token;
+                    console.log('Authentication successful!');
+                    // Update any existing chat instances
+                    if (dmChat) dmChat.setAuthToken(token);
+                    if (playerChat) playerChat.setAuthToken(token);
+                };
+            } else {
+                authToken = authHelper.getToken();
+                console.log('Already authenticated as:', authCheck.user.username);
+            }
+        });
+
+        // Initialize demo
+        console.log('🎲 Simple Dice Chat Demo loaded!');
+        console.log('Server URL:', window.location.origin);
+        console.log('Note: Authentication is now required to use the chat system');
+        console.log('To connect multiple clients to the same room:');
+        console.log('1. Login or register when prompted');
+        console.log('2. Connect as DM first (creates room)');
+        console.log('3. Copy the Session ID');
+        console.log('4. Open new browser/tab and paste Session ID in Player Room ID field');
+    </script>
+</body>
+</html>

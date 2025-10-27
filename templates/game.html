@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hex Explorer - Game</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/game.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        
+        <!-- UI Overlay -->
+        <div id="ui-overlay">
+            <!-- Top bar with game info -->
+            <div id="top-bar">
+                <div id="position-info">Position: (0, 0, 0)</div>
+                <div id="terrain-info">Terrain: Unknown</div>
+                <div id="time-info">Day 1, Morning</div>
+            </div>
+            
+            
+            <!-- Hex info panel -->
+            <div id="hex-info-panel" class="hidden">
+                <h3 id="hex-title">Hex Information</h3>
+                <div id="hex-description">Click on a hex to see its description.</div>
+                <div id="hex-details">
+                    <div>Terrain: <span id="detail-terrain"></span></div>
+                    <div>Biome: <span id="detail-biome"></span></div>
+                    <div>Elevation: <span id="detail-elevation"></span></div>
+                    <div>Explored: <span id="detail-explored"></span></div>
+                </div>
+                <button id="generate-description">Generate AI Description</button>
+            </div>
+            
+            <!-- Bottom controls -->
+            <div id="bottom-controls">
+                <button id="return-menu">Main Menu</button>
+                <button id="toggle-fog">Toggle Fog</button>
+                <button id="center-view">Center View</button>
+            </div>
+            
+            <!-- Messages -->
+            <div id="message-box"></div>
+        </div>
+        
+        <!-- Loading spinner -->
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+        
+        <!-- Exploration confirmation modal -->
+        <div id="exploration-modal" class="modal">
+            <div class="modal-content exploration-modal">
+                <h3 id="exploration-title">Explore Hex?</h3>
+                <div id="exploration-details">
+                    <div id="exploration-terrain"></div>
+                    <div id="exploration-biome"></div>
+                    <div id="exploration-position"></div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="confirm-explore" class="explore-btn">Explore</button>
+                    <button id="cancel-explore" class="cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Server Console -->
+    <div id="server-console" class="server-console minimized">
+        <div class="console-header">
+            <span class="console-title">Server Console</span>
+            <div class="console-controls">
+                <button id="clear-console" class="console-btn">Clear</button>
+                <button id="toggle-console" class="console-btn">▼</button>
+            </div>
+        </div>
+        <div class="console-body">
+            <div id="console-output" class="console-output"></div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="/static/js/hex-renderer.js"></script>
+    <script src="/static/js/game.js"></script>
+</body>
+</html>

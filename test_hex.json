@@ -1,0 +1,50 @@
+{
+  "current_position": [0, 0, 0],
+  "hexes": [
+    {
+      "q": 0,
+      "r": 0,
+      "s": 0,
+      "terrain": "forest",
+      "description": "Dense forest with dark green foliage",
+      "explored": false,
+      "visible": false
+    },
+    {
+      "q": 1,
+      "r": 0,
+      "s": -1,
+      "terrain": "water",
+      "description": "A water area",
+      "explored": false,
+      "visible": false
+    },
+    {
+      "q": -1,
+      "r": 1,
+      "s": 0,
+      "terrain": "mountains",
+      "description": "Tall peaks covered in snow",
+      "explored": false,
+      "visible": false
+    },
+    {
+      "q": 0,
+      "r": 1,
+      "s": -1,
+      "terrain": "grass",
+      "description": "Rolling grasslands",
+      "explored": false,
+      "visible": false
+    },
+    {
+      "q": 1,
+      "r": -1,
+      "s": 0,
+      "terrain": "desert",
+      "description": "Sandy dunes",
+      "explored": false,
+      "visible": false
+    }
+  ]
+}

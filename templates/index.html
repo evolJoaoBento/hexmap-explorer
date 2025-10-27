@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hex Explorer - Main Menu</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Authentication Modal -->
+    <div id="auth-modal" class="modal active">
+        <div class="modal-content">
+            <h2>Welcome to Hex Explorer</h2>
+            
+            <!-- Login/Register Tabs -->
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login">Login</button>
+                <button class="auth-tab" data-tab="register">Register</button>
+            </div>
+            
+            <!-- Error/Success Messages -->
+            <div id="auth-message" class="auth-message hidden"></div>
+            
+            <!-- Login Form -->
+            <div id="login-form" class="auth-form active">
+                <div class="auth-input-group">
+                    <label for="login-username">Username or Email:</label>
+                    <input type="text" id="login-username" placeholder="Enter username or email" required>
+                </div>
+                
+                <div class="auth-input-group">
+                    <label for="login-password">Password:</label>
+                    <input type="password" id="login-password" placeholder="Enter password" required>
+                </div>
+                
+                <div class="auth-buttons">
+                    <button id="login-btn" class="auth-btn">Login</button>
+                </div>
+            </div>
+            
+            <!-- Registration Form -->
+            <div id="register-form" class="auth-form">
+                <div class="auth-input-group">
+                    <label for="reg-username">Username:</label>
+                    <input type="text" id="reg-username" placeholder="Choose a username" maxlength="20" required>
+                    <small>3-20 characters, letters, numbers, and underscores only</small>
+                </div>
+                
+                <div class="auth-input-group">
+                    <label for="reg-email">Email:</label>
+                    <input type="email" id="reg-email" placeholder="Enter your email" required>
+                </div>
+                
+                <div class="auth-input-group">
+                    <label for="reg-password">Password:</label>
+                    <input type="password" id="reg-password" placeholder="Choose a password" required>
+                    <small>At least 8 characters with uppercase, lowercase, number, and special character</small>
+                </div>
+                
+                <div class="auth-input-group">
+                    <label for="reg-confirm-password">Confirm Password:</label>
+                    <input type="password" id="reg-confirm-password" placeholder="Confirm your password" required>
+                </div>
+                
+                <div class="auth-role-selection">
+                    <label>Role:</label>
+                    <div class="role-buttons">
+                        <button id="role-player" class="role-btn active" data-role="player">
+                            <span class="role-icon">🎮</span>
+                            <span class="role-text">Player</span>
+                            <small>Join existing worlds</small>
+                        </button>
+                        <button id="role-master" class="role-btn" data-role="game_master">
+                            <span class="role-icon">👑</span>
+                            <span class="role-text">Game Master</span>
+                            <small>Create and manage worlds</small>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="player-color-selection">
+                    <label>Player Color:</label>
+                    <div class="color-buttons">
+                        <button class="color-btn active" data-color="#3498db" style="background-color: #3498db;">
+                            <span class="color-name">Blue</span>
+                        </button>
+                        <button class="color-btn" data-color="#e74c3c" style="background-color: #e74c3c;">
+                            <span class="color-name">Red</span>
+                        </button>
+                        <button class="color-btn" data-color="#2ecc71" style="background-color: #2ecc71;">
+                            <span class="color-name">Green</span>
+                        </button>
+                        <button class="color-btn" data-color="#f39c12" style="background-color: #f39c12;">
+                            <span class="color-name">Orange</span>
+                        </button>
+                        <button class="color-btn" data-color="#9b59b6" style="background-color: #9b59b6;">
+                            <span class="color-name">Purple</span>
+                        </button>
+                        <button class="color-btn" data-color="#1abc9c" style="background-color: #1abc9c;">
+                            <span class="color-name">Teal</span>
+                        </button>
+                        <button class="color-btn" data-color="#f1c40f" style="background-color: #f1c40f;">
+                            <span class="color-name">Yellow</span>
+                        </button>
+                        <button class="color-btn" data-color="#e67e22" style="background-color: #e67e22;">
+                            <span class="color-name">Carrot</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="auth-buttons">
+                    <button id="register-btn" class="auth-btn">Register</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="main-menu" class="hidden">
+        <canvas id="background-canvas"></canvas>
+        <div class="menu-container">
+            <h1 class="game-title">HEX EXPLORER</h1>
+            <p class="game-subtitle">D&D 5e Travel System</p>
+            
+            <div class="menu-buttons">
+                <button class="menu-button" id="new-adventure">
+                    <span class="button-text">Play</span>
+                    <span class="button-desc">Join a master's world as a player</span>
+                </button>
+                
+                <button class="menu-button" id="map-generator">
+                    <span class="button-text">Master</span>
+                    <span class="button-desc">Create and manage worlds as a game master</span>
+                </button>
+                
+                <button class="menu-button" id="settings">
+                    <span class="button-text">Settings</span>
+                    <span class="button-desc">Configure game options and AI models</span>
+                </button>
+            </div>
+            
+            <div class="footer">
+                <p>v1.0 - Web Edition | Powered by Qwen 2.5 & LLaVA</p>
+                <p class="controls-hint">Click to select | ESC to go back</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Session Selection Modal -->
+    <div id="session-modal" class="modal">
+        <div class="modal-content">
+            <h2>Select Adventure</h2>
+            
+            <div class="session-options">
+                <div class="create-new-section">
+                    <h3>Create New Session</h3>
+                    <div class="seed-selector">
+                        <label for="new-seed-input">World Seed:</label>
+                        <input type="number" id="new-seed-input" min="1" max="1000000" value="">
+                        <button id="randomize-new-seed">Random</button>
+                    </div>
+                    <button id="create-new-session" class="session-btn new">Create New Adventure</button>
+                </div>
+                
+                <div class="existing-sessions">
+                    <h3>Join Existing Session</h3>
+                    <div id="session-list" class="session-list">
+                        <!-- Sessions will be loaded here -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button id="cancel-session">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <h2>Settings</h2>
+            <div class="settings-form">
+                <div class="setting-group">
+                    <label for="ai-model">AI Model:</label>
+                    <select id="ai-model">
+                        <option value="qwen2.5:3b">qwen2.5:3b</option>
+                        <option value="mistral:7b">mistral:7b</option>
+                        <option value="llama3:8b">llama3:8b</option>
+                    </select>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="vision-model">Vision Model:</label>
+                    <select id="vision-model">
+                        <option value="llava:7b">llava:7b</option>
+                        <option value="bakllava:7b">bakllava:7b</option>
+                    </select>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="ollama-url">Ollama URL:</label>
+                    <input type="text" id="ollama-url" value="http://localhost:11434">
+                    <button id="refresh-models">Refresh</button>
+                </div>
+                
+                <div class="connection-status" id="connection-status">
+                    Ollama: Not connected
+                </div>
+                
+                <div class="setting-group">
+                    <label>UI Scale:</label>
+                    <button id="scale-down">A-</button>
+                    <span id="scale-display">1.0x</span>
+                    <button id="scale-up">A+</button>
+                </div>
+                
+                <div class="modal-buttons">
+                    <button id="save-settings">Save</button>
+                    <button id="cancel-settings">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- File input for loading maps -->
+    <input type="file" id="file-input" accept=".json" style="display: none;">
+    
+    <!-- Loading spinner -->
+    <div id="loading" class="hidden">
+        <div class="spinner"></div>
+        <p>Loading...</p>
+    </div>
+    
+    <script src="/static/js/menu.js"></script>
+</body>
+</html>

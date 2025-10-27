@@ -1,0 +1,36 @@
+# Security Requirements for Hex Explorer Web Service
+# Install with: pip install -r requirements-security.txt
+
+# Core Flask Security
+flask-bcrypt==1.0.1          # Password hashing
+flask-jwt-extended==4.5.3    # JWT authentication
+flask-limiter==3.5.0         # Rate limiting
+flask-talisman==1.1.0        # HTTPS and security headers
+flask-wtf==1.2.1             # CSRF protection
+flask-login==0.6.3           # Session management
+
+# Database and Sessions
+flask-sqlalchemy==3.1.1      # ORM for database
+psycopg2-binary==2.9.9       # PostgreSQL driver
+redis==5.0.1                 # Session storage
+flask-session==0.5.0         # Server-side sessions
+flask-migrate==4.0.5         # Database migrations
+
+# Input Validation
+marshmallow==3.20.1          # Schema validation
+email-validator==2.1.0       # Email validation
+python-dotenv==1.0.0         # Environment variables
+
+# Security Tools
+cryptography==41.0.7         # Encryption utilities
+argon2-cffi==23.1.0         # Alternative password hashing
+pyotp==2.9.0                # Two-factor authentication
+
+# Monitoring and Logging
+flask-cors==4.0.0           # CORS configuration
+python-json-logger==2.0.7   # JSON logging
+sentry-sdk[flask]==1.39.1   # Error tracking (optional)
+
+# Development Security Tools
+bandit==1.7.5               # Security linter
+safety==3.0.1               # Dependency vulnerability checker

@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hex Map Generator</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/generator.css">
+</head>
+<body>
+    <div id="generator-container">
+        <!-- Left sidebar with controls -->
+        <div id="generator-sidebar">
+            <h2>Hex Map Generator</h2>
+            
+            <div class="section">
+                <h3>Session Settings</h3>
+                <div class="session-name-group">
+                    <label for="session-name">Session Name:</label>
+                    <input type="text" id="session-name" placeholder="Master Session" maxlength="50">
+                    <button id="update-session-name" class="generator-btn small">Update</button>
+                </div>
+                <div class="session-info">
+                    <span class="session-type">Type: Master Session</span>
+                    <span class="session-status" id="session-status">Active</span>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>Map Controls</h3>
+                <button id="load-json-map" class="generator-btn">Load JSON Map</button>
+                <button id="import-image-map" class="generator-btn">Import Image Map</button>
+                <button id="show-color-guide" class="generator-btn">Color Guide</button>
+                <button id="load-continents" class="generator-btn">Load Continents</button>
+                <button id="set-seed" class="generator-btn">Set Seed</button>
+                <button id="random-seed" class="generator-btn">Random Seed</button>
+                <button id="sync-world" class="generator-btn sync-btn">🔄 Sync World</button>
+                
+                <div class="seed-display">
+                    <label>Current Seed:</label>
+                    <span id="current-seed">12345</span>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>View Controls</h3>
+                <button id="reset-view" class="generator-btn">Reset View</button>
+                <button id="fit-map" class="generator-btn">Fit Map</button>
+                
+                <div class="zoom-controls">
+                    <label>Zoom:</label>
+                    <span id="zoom-display">100%</span>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>Tools</h3>
+                <div class="tool-selector">
+                    <button id="tool-normal" class="tool-btn active" data-tool="normal">
+                        <strong>Normal</strong><br>
+                        <small>Drag to pan, click for info</small>
+                    </button>
+                    <button id="tool-brush" class="tool-btn" data-tool="brush">
+                        <strong>Brush</strong><br>
+                        <small>Paint terrain</small>
+                    </button>
+                    <button id="tool-teleport" class="tool-btn" data-tool="teleport">
+                        <strong>Teleport</strong><br>
+                        <small>Move players</small>
+                    </button>
+                </div>
+                
+                <div id="brush-controls" class="brush-controls hidden">
+                    <div class="brush-size">
+                        <label for="brush-size">Brush Size:</label>
+                        <input type="range" id="brush-size" min="1" max="10" value="4">
+                        <span id="brush-size-display">4</span>
+                    </div>
+                </div>
+                
+                <div class="teleport-controls hidden">
+                    <h4>Player Teleport</h4>
+                    <div class="player-selection">
+                        <label for="teleport-player-select">Select Player:</label>
+                        <select id="teleport-player-select">
+                            <option value="">No players available</option>
+                        </select>
+                    </div>
+                    <div class="teleport-target">
+                        <label>Target Location:</label>
+                        <div id="teleport-target-display" class="target-display">Click on map to select target</div>
+                    </div>
+                    <div class="teleport-instruction">Select a player and click on the map to choose destination</div>
+                    <button id="teleport-confirm" class="teleport-btn" disabled>Select player and target hex</button>
+                </div>
+                
+                <div class="north-control">
+                    <label for="north-direction">North Direction:</label>
+                    <input type="range" id="north-direction" min="0" max="359" value="0">
+                    <span id="north-direction-display">0°</span>
+                    <button id="reset-north" class="generator-btn small">Reset</button>
+                </div>
+            </div>
+            
+            <div class="section" id="terrain-section">
+                <h3>Brush Tools</h3>
+                
+                <div class="terrain-palette">
+                    <h4>Select Terrain:</h4>
+                    <div class="terrain-buttons">
+                        <button class="terrain-btn active" data-terrain="water">Water</button>
+                        <button class="terrain-btn" data-terrain="forest">Forest</button>
+                        <button class="terrain-btn" data-terrain="plains">Plains</button>
+                        <button class="terrain-btn" data-terrain="mountains">Mountains</button>
+                        <button class="terrain-btn" data-terrain="desert">Desert</button>
+                        <button class="terrain-btn" data-terrain="hills">Hills</button>
+                        <button class="terrain-btn" data-terrain="swamp">Swamp</button>
+                        <button class="terrain-btn" data-terrain="tundra">Tundra</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>Export Controls</h3>
+                <button id="save-json" class="generator-btn">Save as JSON</button>
+                <button id="copy-to-game" class="generator-btn">Copy to Game</button>
+                <button id="take-screenshot" class="generator-btn">Screenshot</button>
+            </div>
+            
+            <div class="section">
+                <h3>Map Stats</h3>
+                <div id="map-stats">
+                    <div>Hexes: <span id="hex-count">0</span></div>
+                    <div>Terrain Distribution:</div>
+                    <div id="terrain-stats"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Resize handle -->
+        <div id="sidebar-resize-handle" class="resize-handle"></div>
+        
+        <!-- Main canvas area -->
+        <div id="generator-canvas-area">
+            <!-- Movement Approval Queue (Master View Only) -->
+            <div id="movement-approval-queue" class="approval-queue">
+                <div class="approval-header">
+                    <h3>Movement Requests</h3>
+                    <button id="toggle-approval-queue" class="toggle-btn">▼</button>
+                </div>
+                <div id="approval-list" class="approval-list">
+                    <!-- Requests will be added here dynamically -->
+                </div>
+            </div>
+            <canvas id="generator-canvas"></canvas>
+            
+            <!-- Tooltip -->
+            <div id="generator-tooltip" class="generator-tooltip hidden">
+                <div id="tooltip-coords"></div>
+                <div id="tooltip-terrain"></div>
+                <div id="tooltip-biome"></div>
+            </div>
+            
+            <!-- Controls overlay -->
+            <div id="canvas-controls">
+                <div class="control-hint">
+                    <strong>Controls:</strong>
+                    <span>Left Click: Paint | Right/Middle Drag: Pan | Mouse Wheel: Zoom</span>
+                </div>
+                <button id="return-menu" class="return-btn">← Main Menu</button>
+            </div>
+        </div>
+        
+        <!-- Loading spinner -->
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <p>Generating...</p>
+        </div>
+    </div>
+    
+    <!-- File input for loading JSON maps -->
+    <input type="file" id="json-file-input" accept=".json" style="display: none;">
+    
+    <!-- Image Import Modal -->
+    <div id="image-import-modal" class="modal">
+        <div class="modal-content large-modal">
+            <h3>Import Image Map</h3>
+            
+            <div class="import-container">
+                <!-- Left side: File selection and settings -->
+                <div class="import-settings">
+                    <div class="file-selection">
+                        <button id="select-image-file" class="generator-btn">Choose Image File</button>
+                        <input type="file" id="image-file-input" accept=".jpg,.jpeg,.png,.bmp,.tiff" style="display: none;">
+                        <p id="selected-file-name" class="file-name">No file selected</p>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h4>Quick Presets</h4>
+                        <div class="preset-control">
+                            <select id="color-preset">
+                                <option value="default">Default (Blue = Water)</option>
+                                <option value="ocean-as-plains">Ocean as Plains (Blue = Plains)</option>
+                                <option value="inverted">Inverted (Swap Water/Land)</option>
+                                <option value="desert-world">Desert World (All → Desert)</option>
+                                <option value="forest-world">Forest World (All → Forest)</option>
+                            </select>
+                            <button id="apply-preset" class="generator-btn">Apply</button>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h4>Terrain Color Mapping</h4>
+                        <div class="terrain-mapping">
+                            <div class="mapping-item">
+                                <div class="color-preview" style="background-color: rgb(70, 130, 180);"></div>
+                                <div class="mapping-controls">
+                                    <label>Steel Blue maps to:</label>
+                                    <select class="terrain-select" data-color="water">
+                                        <option value="water" selected>Water</option>
+                                        <option value="plains">Plains</option>
+                                        <option value="forest">Forest</option>
+                                        <option value="mountains">Mountains</option>
+                                        <option value="desert">Desert</option>
+                                        <option value="hills">Hills</option>
+                                        <option value="swamp">Swamp</option>
+                                        <option value="tundra">Tundra</option>
+                                    </select>
+                                    <div class="tolerance-control-inline">
+                                        <label for="tolerance-water">Tolerance:</label>
+                                        <input type="range" id="tolerance-water" class="tolerance-slider" data-color="water" min="0" max="255" value="50">
+                                        <span class="tolerance-value">50</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mapping-item">
+                                <div class="color-preview" style="background-color: rgb(34, 139, 34);"></div>
+                                <div class="mapping-controls">
+                                    <label>Forest Green maps to:</label>
+                                    <select class="terrain-select" data-color="forest">
+                                        <option value="water">Water</option>
+                                        <option value="plains">Plains</option>
+                                        <option value="forest" selected>Forest</option>
+                                        <option value="mountains">Mountains</option>
+                                        <option value="desert">Desert</option>
+                                        <option value="hills">Hills</option>
+                                        <option value="swamp">Swamp</option>
+                                        <option value="tundra">Tundra</option>
+                                    </select>
+                                    <div class="tolerance-control-inline">
+                                        <label for="tolerance-forest">Tolerance:</label>
+                                        <input type="range" id="tolerance-forest" class="tolerance-slider" data-color="forest" min="0" max="255" value="50">
+                                        <span class="tolerance-value">50</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mapping-item">
+                                <div class="color-preview" style="background-color: rgb(144, 238, 144);"></div>
+                                <div class="mapping-controls">
+                                    <label>Light Green maps to:</label>
+                                    <select class="terrain-select" data-color="plains">
+                                        <option value="water">Water</option>
+                                        <option value="plains" selected>Plains</option>
+                                        <option value="forest">Forest</option>
+                                        <option value="mountains">Mountains</option>
+                                        <option value="desert">Desert</option>
+                                        <option value="hills">Hills</option>
+                                        <option value="swamp">Swamp</option>
+                                        <option value="tundra">Tundra</option>
+                                    </select>
+                                    <div class="tolerance-control-inline">
+                                        <label for="tolerance-plains">Tolerance:</label>
+                                        <input type="range" id="tolerance-plains" class="tolerance-slider" data-color="plains" min="0" max="255" value="50">
+                                        <span class="tolerance-value">50</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mapping-item">
+                                <div class="color-preview" style="background-color: rgb(105, 105, 105);"></div>
+                                <div class="mapping-controls">
+                                    <label>Dim Gray maps to:</label>
+                                    <select class="terrain-select" data-color="mountains">
+                                        <option value="water">Water</option>
+                                        <option value="plains">Plains</option>
+                                        <option value="forest">Forest</option>
+                                        <option value="mountains" selected>Mountains</option>
+                                        <option value="desert">Desert</option>
+                                        <option value="hills">Hills</option>
+                                        <option value="swamp">Swamp</option>
+                                        <option value="tundra">Tundra</option>
+                                    </select>
+                                    <div class="tolerance-control-inline">
+                                        <label for="tolerance-mountains">Tolerance:</label>
+                                        <input type="range" id="tolerance-mountains" class="tolerance-slider" data-color="mountains" min="0" max="255" value="50">
+                                        <span class="tolerance-value">50</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mapping-item">
+                                <div class="color-preview" style="background-color: rgb(244, 164, 96);"></div>
+                                <div class="mapping-controls">
+                                    <label>Sandy Brown maps to:</label>
+                                    <select class="terrain-select" data-color="desert">
+                                        <option value="water">Water</option>
+                                        <option value="plains">Plains</option>
+                                        <option value="forest">Forest</option>
+                                        <option value="mountains">Mountains</option>
+                                        <option value="desert" selected>Desert</option>
+                                        <option value="hills">Hills</option>
+                                        <option value="swamp">Swamp</option>
+                                        <option value="tundra">Tundra</option>
+                                    </select>
+                                    <div class="tolerance-control-inline">
+                                        <label for="tolerance-desert">Tolerance:</label>
+                                        <input type="range" id="tolerance-desert" class="tolerance-slider" data-color="desert" min="0" max="255" value="50">
+                                        <span class="tolerance-value">50</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mapping-item">
+                                <div class="color-preview" style="background-color: rgb(143, 188, 143);"></div>
+                                <div class="mapping-controls">
+                                    <label>Dark Sea Green maps to:</label>
+                                    <select class="terrain-select" data-color="hills">
+                                        <option value="water">Water</option>
+                                        <option value="plains">Plains</option>
+                                        <option value="forest">Forest</option>
+                                        <option value="mountains">Mountains</option>
+                                        <option value="desert">Desert</option>
+                                        <option value="hills" selected>Hills</option>
+                                        <option value="swamp">Swamp</option>
+                                        <option value="tundra">Tundra</option>
+                                    </select>
+                                    <div class="tolerance-control-inline">
+                                        <label for="tolerance-hills">Tolerance:</label>
+                                        <input type="range" id="tolerance-hills" class="tolerance-slider" data-color="hills" min="0" max="255" value="50">
+                                        <span class="tolerance-value">50</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mapping-item">
+                                <div class="color-preview" style="background-color: rgb(85, 107, 47);"></div>
+                                <div class="mapping-controls">
+                                    <label>Dark Olive Green maps to:</label>
+                                    <select class="terrain-select" data-color="swamp">
+                                        <option value="water">Water</option>
+                                        <option value="plains">Plains</option>
+                                        <option value="forest">Forest</option>
+                                        <option value="mountains">Mountains</option>
+                                        <option value="desert">Desert</option>
+                                        <option value="hills">Hills</option>
+                                        <option value="swamp" selected>Swamp</option>
+                                        <option value="tundra">Tundra</option>
+                                    </select>
+                                    <div class="tolerance-control-inline">
+                                        <label for="tolerance-swamp">Tolerance:</label>
+                                        <input type="range" id="tolerance-swamp" class="tolerance-slider" data-color="swamp" min="0" max="255" value="50">
+                                        <span class="tolerance-value">50</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mapping-item">
+                                <div class="color-preview" style="background-color: rgb(240, 248, 255);"></div>
+                                <div class="mapping-controls">
+                                    <label>Alice Blue maps to:</label>
+                                    <select class="terrain-select" data-color="tundra">
+                                        <option value="water">Water</option>
+                                        <option value="plains">Plains</option>
+                                        <option value="forest">Forest</option>
+                                        <option value="mountains">Mountains</option>
+                                        <option value="desert">Desert</option>
+                                        <option value="hills">Hills</option>
+                                        <option value="swamp">Swamp</option>
+                                        <option value="tundra" selected>Tundra</option>
+                                    </select>
+                                    <div class="tolerance-control-inline">
+                                        <label for="tolerance-tundra">Tolerance:</label>
+                                        <input type="range" id="tolerance-tundra" class="tolerance-slider" data-color="tundra" min="0" max="255" value="50">
+                                        <span class="tolerance-value">50</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h4>Map Size</h4>
+                        <div class="size-control">
+                            <label for="map-width-miles">Map width in miles:</label>
+                            <input type="number" id="map-width-miles" min="30" max="3000" value="300" step="30">
+                            <p class="help-text">Each hex = 3 miles. Enter total width in miles (divisible by 30 recommended)</p>
+                            <div class="size-info">
+                                <span id="hex-count-display">100 hexes wide</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h4>Default Terrain</h4>
+                        <div class="default-terrain-control">
+                            <label for="default-terrain">For unmatched colors:</label>
+                            <select id="default-terrain">
+                                <option value="water">Water</option>
+                                <option value="plains" selected>Plains</option>
+                                <option value="forest">Forest</option>
+                                <option value="mountains">Mountains</option>
+                                <option value="desert">Desert</option>
+                                <option value="hills">Hills</option>
+                                <option value="swamp">Swamp</option>
+                                <option value="tundra">Tundra</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Right side: Preview -->
+                <div class="import-preview">
+                    <div class="preview-header">
+                        <h4>Preview</h4>
+                        <button id="update-preview" class="generator-btn small">Update Preview</button>
+                    </div>
+                    <div class="preview-container">
+                        <div id="image-preview" class="image-preview">
+                            <p>Select an image to see preview</p>
+                        </div>
+                        <div id="terrain-preview" class="terrain-preview">
+                            <p>Terrain mapping will appear here</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-buttons">
+                <button id="reset-import-settings">Reset Settings</button>
+                <button id="import-confirmed" class="generator-btn">Import Map</button>
+                <button id="cancel-import">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Seed input modal -->
+    <div id="seed-modal" class="modal">
+        <div class="modal-content">
+            <h3>Set Seed</h3>
+            <div class="seed-input-group">
+                <label for="seed-input">Enter seed number:</label>
+                <input type="number" id="seed-input" min="1" max="999999999" value="12345">
+            </div>
+            <div class="modal-buttons">
+                <button id="confirm-seed">OK</button>
+                <button id="cancel-seed">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Color Guide Modal -->
+    <div id="color-guide-modal" class="modal">
+        <div class="modal-content">
+            <h3>Image Map Color Guide</h3>
+            <p>Use these colors in your image maps for automatic terrain detection:</p>
+            
+            <div class="color-guide">
+                <div class="color-item">
+                    <div class="color-swatch" style="background-color: rgb(70, 130, 180);"></div>
+                    <div class="color-info">
+                        <strong>Water</strong><br>
+                        RGB(70, 130, 180) - Steel Blue
+                    </div>
+                </div>
+                
+                <div class="color-item">
+                    <div class="color-swatch" style="background-color: rgb(34, 139, 34);"></div>
+                    <div class="color-info">
+                        <strong>Forest</strong><br>
+                        RGB(34, 139, 34) - Forest Green
+                    </div>
+                </div>
+                
+                <div class="color-item">
+                    <div class="color-swatch" style="background-color: rgb(144, 238, 144);"></div>
+                    <div class="color-info">
+                        <strong>Plains</strong><br>
+                        RGB(144, 238, 144) - Light Green
+                    </div>
+                </div>
+                
+                <div class="color-item">
+                    <div class="color-swatch" style="background-color: rgb(105, 105, 105);"></div>
+                    <div class="color-info">
+                        <strong>Mountains</strong><br>
+                        RGB(105, 105, 105) - Dim Gray
+                    </div>
+                </div>
+                
+                <div class="color-item">
+                    <div class="color-swatch" style="background-color: rgb(244, 164, 96);"></div>
+                    <div class="color-info">
+                        <strong>Desert</strong><br>
+                        RGB(244, 164, 96) - Sandy Brown
+                    </div>
+                </div>
+                
+                <div class="color-item">
+                    <div class="color-swatch" style="background-color: rgb(143, 188, 143);"></div>
+                    <div class="color-info">
+                        <strong>Hills</strong><br>
+                        RGB(143, 188, 143) - Dark Sea Green
+                    </div>
+                </div>
+                
+                <div class="color-item">
+                    <div class="color-swatch" style="background-color: rgb(85, 107, 47);"></div>
+                    <div class="color-info">
+                        <strong>Swamp</strong><br>
+                        RGB(85, 107, 47) - Dark Olive Green
+                    </div>
+                </div>
+                
+                <div class="color-item">
+                    <div class="color-swatch" style="background-color: rgb(240, 248, 255);"></div>
+                    <div class="color-info">
+                        <strong>Tundra</strong><br>
+                        RGB(240, 248, 255) - Alice Blue
+                    </div>
+                </div>
+            </div>
+            
+            <p><strong>Tips:</strong></p>
+            <ul>
+                <li>Colors don't need to be exact - there's a 50-pixel tolerance</li>
+                <li>Use image editing software like GIMP, Paint.NET, or Photoshop</li>
+                <li>Transparent areas will be ignored</li>
+                <li>Smaller images work better for performance</li>
+            </ul>
+            
+            <div class="modal-buttons">
+                <button id="close-color-guide">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    
+    <!-- Server Console -->
+    <div id="server-console" class="server-console minimized">
+        <div class="console-header">
+            <span class="console-title">Server Console</span>
+            <div class="console-controls">
+                <button id="clear-console" class="console-btn">Clear</button>
+                <button id="toggle-console" class="console-btn">▼</button>
+            </div>
+        </div>
+        <div class="console-body">
+            <div id="console-output" class="console-output"></div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="/static/js/generator.js?v={{ cache_bust }}"></script>
+</body>
+</html>

@@ -8,13 +8,14 @@ from core.hex import Hex, HexCoordinates
 from travel.system import TravelSystem
 from generation.manager import GenerationManager
 # from generation.terrain_generator import TerrainGenerator, TERRAIN_PROPERTIES, TerrainType
+from generation.minecraft_biomes import MinecraftBiomeGenerator
 from config.constants import TERRAIN_TYPES
 
 
 class HexMap:
     """Hex map with travel system integration"""
     
-    def __init__(self, generation_manager: GenerationManager, seed: Optional[int] = None, use_advanced_terrain: bool = True):
+    def __init__(self, generation_manager: GenerationManager, seed: Optional[int] = None, use_advanced_terrain: bool = True, use_minecraft_biomes: bool = False):
         self.hexes: Dict[Tuple[int, int, int], Hex] = {}
         self.gen_manager = generation_manager
         self.current_position = (0, 0, 0)
@@ -25,10 +26,17 @@ class HexMap:
         self.terrain_seed = seed
         self.terrain_cache: Dict[Tuple[int, int, int], Dict] = {}
         self.use_advanced_terrain = use_advanced_terrain
+        self.use_minecraft_biomes = use_minecraft_biomes
         
-        # Advanced terrain is disabled for stability
-        self.use_advanced_terrain = False
-        print("Using basic terrain generation (advanced disabled for stability)")
+        # Initialize Minecraft-style biome generator if enabled
+        self.minecraft_biome_gen = MinecraftBiomeGenerator(seed) if use_minecraft_biomes else None
+        
+        # Advanced terrain is disabled for stability unless using minecraft biomes
+        if not use_minecraft_biomes:
+            self.use_advanced_terrain = False
+            print("Using basic terrain generation (advanced disabled for stability)")
+        else:
+            print("Using Minecraft-style 6D biome generation")
         
     def _ensure_terrain_generator(self):
         """Initialize terrain generator on first use"""
@@ -36,8 +44,11 @@ class HexMap:
         pass
     
     def create_hex(self, q: int, r: int, s: int) -> Hex:
-        """Create a hex using basic terrain generation"""
-        return self._create_simple_hex(q, r, s)
+        """Create a hex using configured terrain generation"""
+        if self.use_minecraft_biomes and self.minecraft_biome_gen:
+            return self._create_minecraft_hex(q, r, s)
+        else:
+            return self._create_simple_hex(q, r, s)
     
     def _create_simple_hex(self, q: int, r: int, s: int) -> Hex:
         """Create a hex using simple terrain generation (original method)"""
@@ -57,6 +68,23 @@ class HexMap:
             # Use only basic terrain types for fallback
             basic_terrains = ["forest", "plains", "mountains", "water", "desert", "swamp", "tundra", "hills"]
             terrain = random.choice(basic_terrains)
+        
+        return Hex(q, r, s, terrain, "Awaiting description...", generating=True)
+    
+    def _create_minecraft_hex(self, q: int, r: int, s: int) -> Hex:
+        """Create a hex using Minecraft-style 6D biome generation"""
+        try:
+            terrain = self.minecraft_biome_gen.select_biome(q, r, s)
+            
+            # Ensure the terrain exists in our TERRAIN_TYPES, fallback if needed
+            if terrain not in TERRAIN_TYPES:
+                terrain = "plains"  # Safe fallback
+                
+        except Exception as e:
+            print(f"Error in Minecraft biome generation for ({q},{r},{s}): {e}")
+            print("Falling back to simple terrain generation")
+            # Fall back to simple generation on any error
+            return self._create_simple_hex(q, r, s)
         
         return Hex(q, r, s, terrain, "Awaiting description...", generating=True)
     

@@ -1,0 +1,81 @@
+ 1. Race Condition in Approval Process (app.py:1348-1360)
+
+  if request_id in movement_requests:
+      movement_requests[request_id]['status'] = 'approved'
+      # VULNERABLE: Gap between status change and actual movement
+      req = movement_requests[request_id]
+      if req['session_id'] in games:
+          success = game.move_to(q, r, s)
+  Attack Vector: Multiple masters could simultaneously approve the same request, or a request could be processed
+  multiple times.
+
+  2. Duplicate Request Creation (app.py:1198-1204)
+
+  movement_requests[request_id] = request_data
+  # Creates duplicate entries with different IDs
+  if map_session_id != session_id:
+      map_request_id = f"{map_session_id}_{player_name}_{datetime.now().timestamp()}"
+      movement_requests[map_request_id] = request_data.copy()
+  Attack Vector: Player could exploit timing to create multiple pending requests for the same movement.
+
+  3. Session Mapping Logic Exploitation (app.py:1170-1185)
+
+  The seed-based session mapping could allow players to send requests to wrong sessions if they know the seed
+  values.
+
+  MEDIUM RISK VULNERABILITIES
+
+  4. Timing-Based Information Disclosure
+
+  - Different response times for valid vs invalid sessions
+  - Debug logging exposes internal state (lines 1163-1165)
+  - Exception handling differences reveal system internals
+
+  5. Authorization Bypass Potential (app.py:1344-1346)
+
+  creator_id = map_sessions[session_id].get('creator_id', current_user.id)
+  Risk: Fallback to current_user.id could allow unauthorized access for legacy sessions.
+
+  6. Request ID Predictability (app.py:1188)
+
+  request_id = f"{session_id}_{player_name}_{datetime.now().timestamp()}"
+  Risk: Predictable format allows request ID enumeration attacks.
+
+  LOW RISK VULNERABILITIES
+
+  7. Memory Exhaustion
+
+  No cleanup mechanism for old requests in movement_requests dictionary - could lead to DoS.
+
+  8. Information Leakage
+
+  - Player names exposed in request IDs
+  - Session structure exposed through debug logs
+  - Error messages reveal internal state
+
+  INTERSECTION ATTACK SCENARIOS
+
+  1. Double Approval Attack: Master rapidly clicks approve twice → request processed multiple times
+  2. Session Confusion: Player sends requests to both game and map sessions → duplicate movement
+  3. Timing Race: Multiple players request same destination → inconsistent game state
+  4. Request Flooding: Player rapidly submits requests → system overwhelmed, race conditions
+
+  RECOMMENDATION PRIORITY
+
+  Critical (Fix Immediately):
+  - Add atomic operations for request processing
+  - Implement request deduplication
+  - Add proper locking mechanisms
+
+  High:
+  - Remove debug logging from production
+  - Implement request rate limiting
+  - Add request cleanup mechanisms
+
+  Medium:
+  - Improve error handling consistency
+  - Enhance session validation
+  - Add request ID randomization
+
+  The system is vulnerable to intersection attacks primarily due to race conditions in the approval process and lack
+   of atomic operations.

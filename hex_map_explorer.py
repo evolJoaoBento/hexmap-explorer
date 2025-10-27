@@ -1568,7 +1568,7 @@ class HexMapExplorer:
         
         self.ollama = OllamaClient()
         self.gen_manager = GenerationManager(self.ollama)
-        self.hex_map = HexMap(self.ollama, self.gen_manager)
+        self.hex_map = HexMap(self.gen_manager, seed=12345, use_minecraft_biomes=True)
         self.renderer = HexMapRenderer(self.screen, self.hex_map, self.gen_manager)
         
         # Add menu state flags

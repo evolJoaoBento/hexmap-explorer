@@ -16,7 +16,7 @@ from utils.file_operations import save_map_dialog, load_map_dialog, quick_save_d
 class HexMapExplorer:
     """Main application class using modular components"""
     
-    def __init__(self):
+    def __init__(self, seed=None):
         # Always initialize pygame (safe to call multiple times)
         pygame.init()
         
@@ -48,12 +48,13 @@ class HexMapExplorer:
         try:
             self.ollama = OllamaClient()
             self.gen_manager = GenerationManager(self.ollama)
-            # Use a random seed for terrain generation (can be made configurable)
-            terrain_seed = random.randint(0, 1000000)
+            # Use provided seed or generate random one
+            terrain_seed = seed if seed is not None else random.randint(0, 1000000)
+            print(f"Using terrain seed: {terrain_seed}")
             
             # Use only basic terrain generation for stability
             print("Using basic terrain generation")
-            self.hex_map = HexMap(self.gen_manager, seed=None, use_advanced_terrain=False)
+            self.hex_map = HexMap(self.gen_manager, seed=terrain_seed, use_advanced_terrain=False, use_minecraft_biomes=True)
                 
             self.renderer = HexMapRenderer(self.screen, self.hex_map, self.gen_manager)
             

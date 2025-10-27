@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Client Dice Chat Test</title>
+    <link rel="stylesheet" href="dice-chat/simple-dice-chat.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .test-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .test-header h1 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+
+        .session-controls {
+            margin: 20px 0;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .session-display {
+            margin: 15px 0;
+            padding: 15px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            border: 1px solid #4caf50;
+        }
+
+        .session-id-display {
+            font-family: monospace;
+            font-size: 18px;
+            padding: 10px;
+            background: white;
+            border: 2px dashed #4caf50;
+            border-radius: 4px;
+            user-select: all;
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .control-btn {
+            padding: 10px 20px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .control-btn:hover {
+            background: #45a049;
+        }
+
+        .control-btn.secondary {
+            background: #2196F3;
+        }
+
+        .control-btn.secondary:hover {
+            background: #0b7dda;
+        }
+
+        .control-btn.danger {
+            background: #f44336;
+        }
+
+        .control-btn.danger:hover {
+            background: #da190b;
+        }
+
+        .client-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .client-wrapper {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .client-controls {
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .client-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .input-row input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .input-row button {
+            padding: 8px 16px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .input-row button:hover {
+            background: #45a049;
+        }
+
+        .instructions {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .instructions h3 {
+            margin-top: 0;
+            color: #856404;
+        }
+
+        .instructions ol {
+            margin-bottom: 0;
+        }
+
+        #clientContainer {
+            min-height: 200px;
+        }
+
+        .status-bar {
+            padding: 10px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-header">
+        <h1>🎲 Multi-Client Dice Chat Testing Interface</h1>
+        <p>Test multiple dice chat clients connecting to the same room</p>
+    </div>
+
+    <div class="session-controls">
+        <h2>📍 Session Management</h2>
+
+        <div class="input-row">
+            <input type="text" id="customRoomId" placeholder="Enter custom Room ID (or leave empty for random)">
+            <button class="control-btn" onclick="setCustomRoom()">Set Room ID</button>
+            <button class="control-btn secondary" onclick="generateNewRoom()">Generate Random</button>
+        </div>
+
+        <div class="session-display" id="sessionDisplay" style="display: none;">
+            <strong>Current Session ID:</strong>
+            <div class="session-id-display" id="currentRoomDisplay">Not Set</div>
+            <div style="text-align: center;">
+                <button class="control-btn" onclick="copyRoomId()">📋 Copy Room ID</button>
+                <button class="control-btn secondary" onclick="shareRoom()">🔗 Share Link</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="instructions">
+        <h3>📚 Quick Testing Guide:</h3>
+        <ol>
+            <li><strong>Set or Generate a Room ID</strong> above</li>
+            <li><strong>Add Clients</strong> using the buttons below</li>
+            <li><strong>Connect each client</strong> with different usernames</li>
+            <li><strong>Test dice rolls</strong> between DM and Players</li>
+            <li><strong>Share the Room ID</strong> to test from different browsers/devices</li>
+        </ol>
+    </div>
+
+    <div class="control-buttons">
+        <button class="control-btn" onclick="addClient('dm')">➕ Add DM Client</button>
+        <button class="control-btn" onclick="addClient('player')">➕ Add Player Client</button>
+        <button class="control-btn secondary" onclick="addClient('spectator')">👁️ Add Spectator</button>
+        <button class="control-btn danger" onclick="clearAllClients()">🗑️ Clear All</button>
+    </div>
+
+    <div class="client-grid" id="clientContainer"></div>
+
+    <script src="dice-chat/simple-dice-chat.js"></script>
+    <script>
+        let currentRoom = null;
+        let clientCount = 0;
+        const clients = new Map();
+
+        // Initialize with a random room
+        function init() {
+            generateNewRoom();
+        }
+
+        function generateNewRoom() {
+            currentRoom = 'test-' + Math.random().toString(36).substr(2, 9);
+            updateRoomDisplay();
+        }
+
+        function setCustomRoom() {
+            const customId = document.getElementById('customRoomId').value.trim();
+            if (customId) {
+                currentRoom = customId;
+                updateRoomDisplay();
+                document.getElementById('customRoomId').value = '';
+            } else {
+                generateNewRoom();
+            }
+        }
+
+        function updateRoomDisplay() {
+            document.getElementById('currentRoomDisplay').textContent = currentRoom;
+            document.getElementById('sessionDisplay').style.display = 'block';
+        }
+
+        function copyRoomId() {
+            navigator.clipboard.writeText(currentRoom).then(() => {
+                const btn = event.target;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '✓ Copied!';
+                btn.style.background = '#4caf50';
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.style.background = '';
+                }, 2000);
+            });
+        }
+
+        function shareRoom() {
+            const shareUrl = `${window.location.origin}/dice-chat?room=${currentRoom}`;
+            navigator.clipboard.writeText(shareUrl).then(() => {
+                alert(`Share this link:\n\n${shareUrl}\n\n(Copied to clipboard!)`);
+            });
+        }
+
+        function addClient(role = 'player') {
+            if (!currentRoom) {
+                alert('Please set a Room ID first!');
+                return;
+            }
+
+            clientCount++;
+            const clientId = `client-${clientCount}`;
+
+            const clientWrapper = document.createElement('div');
+            clientWrapper.className = 'client-wrapper';
+            clientWrapper.id = clientId;
+
+            const defaultUsername = role === 'dm' ? `DM${clientCount}` :
+                                   role === 'spectator' ? `Spectator${clientCount}` :
+                                   `Player${clientCount}`;
+
+            clientWrapper.innerHTML = `
+                <div class="client-controls">
+                    <div class="client-title">
+                        ${role === 'dm' ? '🎭' : role === 'spectator' ? '👁️' : '⚔️'}
+                        ${role.toUpperCase()} Client #${clientCount}
+                    </div>
+                    <div class="input-row">
+                        <input type="text" id="${clientId}-username" placeholder="Username" value="${defaultUsername}">
+                        <button onclick="connectClient('${clientId}', '${role}')">Connect</button>
+                        <button onclick="disconnectClient('${clientId}')" style="background: #f44336;">Disconnect</button>
+                    </div>
+                    <div class="status-bar" id="${clientId}-status">
+                        Status: <span style="color: #f44336;">Disconnected</span> |
+                        Room: <code>${currentRoom}</code>
+                    </div>
+                </div>
+                <div id="${clientId}-chat"></div>
+            `;
+
+            document.getElementById('clientContainer').appendChild(clientWrapper);
+        }
+
+        function connectClient(clientId, role) {
+            const username = document.getElementById(`${clientId}-username`).value.trim();
+
+            if (!username) {
+                alert('Please enter a username!');
+                return;
+            }
+
+            // Disconnect if already connected
+            if (clients.has(clientId)) {
+                disconnectClient(clientId);
+            }
+
+            const container = document.getElementById(`${clientId}-chat`);
+            const chatInterface = new SimpleDiceChatInterface(container, {
+                apiBaseUrl: window.location.origin,
+                userRole: role,
+                roomId: currentRoom
+            });
+
+            chatInterface.connect(username, role, currentRoom);
+            clients.set(clientId, chatInterface);
+
+            // Update status
+            document.getElementById(`${clientId}-status`).innerHTML = `
+                Status: <span style="color: #4caf50;">Connected</span> |
+                Room: <code>${currentRoom}</code> |
+                User: <strong>${username}</strong>
+            `;
+        }
+
+        function disconnectClient(clientId) {
+            const client = clients.get(clientId);
+            if (client) {
+                // Note: No actual disconnect method in current implementation
+                // Just clear the interface and update status
+                document.getElementById(`${clientId}-chat`).innerHTML = '';
+                clients.delete(clientId);
+
+                document.getElementById(`${clientId}-status`).innerHTML = `
+                    Status: <span style="color: #f44336;">Disconnected</span> |
+                    Room: <code>${currentRoom}</code>
+                `;
+            }
+        }
+
+        function clearAllClients() {
+            if (confirm('Remove all client instances?')) {
+                document.getElementById('clientContainer').innerHTML = '';
+                clients.clear();
+                clientCount = 0;
+            }
+        }
+
+        // Parse room from URL if provided
+        function parseUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            const roomParam = params.get('room');
+            if (roomParam) {
+                currentRoom = roomParam;
+                updateRoomDisplay();
+                console.log('Joined room from URL:', currentRoom);
+            }
+        }
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {
+            parseUrlParams();
+            if (!currentRoom) {
+                init();
+            }
+            console.log('Multi-Client Test Interface Ready!');
+            console.log('Current Room:', currentRoom);
+        });
+    </script>
+</body>
+</html>

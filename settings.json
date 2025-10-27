@@ -1,0 +1,15 @@
+{
+  "ai_model": "qwen2.5:3b",
+  "vision_model": "llava:7b",
+  "ollama_url": "http://localhost:11434",
+  "modules": {
+    "config": true,
+    "core": true,
+    "travel": true,
+    "generation": true,
+    "rendering": true,
+    "application": true,
+    "utils": true
+  },
+  "ui_scale": 0.6
+}
