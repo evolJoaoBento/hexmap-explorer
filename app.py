@@ -289,10 +289,11 @@ app.logger.addHandler(socket_handler)
 
 class WebGameSession:
     """Web-based game session"""
-    def __init__(self, session_id, seed=None, player_name=None, player_color=None):
+    def __init__(self, session_id, seed=None, player_name=None, player_color=None, master_session_id=None):
         self.session_id = session_id
         self.player_name = player_name or f"Player {session_id[-4:]}"
         self.player_color = player_color or '#FFD700'
+        self.master_session_id = master_session_id  # NEW: Track which master session this player belongs to
         self.ollama = OllamaClient()
         self.gen_manager = GenerationManager(self.ollama)
         self.seed = seed if seed is not None else random.randint(1, 1000000)
@@ -301,27 +302,45 @@ class WebGameSession:
         # Don't call initialize_map() - players should only see master's hexes
         self.hex_map.current_position = (0, 0, 0)  # Default starting position
         self.created_at = datetime.now()
+
+        # Log if this is a player in a master session
+        if self.master_session_id:
+            print(f"[SESSION] Player {player_name} linked to master session: {master_session_id}")
         
     def get_map_data(self):
         """Get current map data for client"""
         hexes = []
-        total_hexes = len(self.hex_map.hexes)
-        visible_count = 0
-        for (q, r, s), hex_obj in self.hex_map.hexes.items():
-            if hex_obj.visible:
-                visible_count += 1
-                hexes.append({
-                    'q': q, 'r': r, 's': s,
-                    'terrain': getattr(hex_obj, 'terrain', 'unknown'),
-                    'biome': getattr(hex_obj, 'biome', 'temperate'),
-                    'explored': getattr(hex_obj, 'explored', False),
-                    'visible': getattr(hex_obj, 'visible', True),
-                    'has_location': getattr(hex_obj, 'has_location', False),
-                    'location_name': getattr(hex_obj, 'location_name', ''),
-                    'elevation': getattr(hex_obj, 'elevation', 0),
-                    'description': getattr(hex_obj, 'description', 'An unexplored hex.')
-                })
-        
+
+        # MULTIPLAYER FIX: If this player is in a master session, load hexes from master's data
+        if self.master_session_id and self.master_session_id in map_sessions:
+            master_session = map_sessions[self.master_session_id]
+            master_hexes = master_session.get('hexes', [])
+            print(f"[MAP_DATA] Loading {len(master_hexes)} hexes from master session {self.master_session_id}")
+
+            # Return all master's hexes (they see everything the DM has generated/edited)
+            hexes = master_hexes
+            total_hexes = len(hexes)
+            visible_count = len(hexes)
+
+        else:
+            # Solo play or legacy: use own generated hexes
+            total_hexes = len(self.hex_map.hexes)
+            visible_count = 0
+            for (q, r, s), hex_obj in self.hex_map.hexes.items():
+                if hex_obj.visible:
+                    visible_count += 1
+                    hexes.append({
+                        'q': q, 'r': r, 's': s,
+                        'terrain': getattr(hex_obj, 'terrain', 'unknown'),
+                        'biome': getattr(hex_obj, 'biome', 'temperate'),
+                        'explored': getattr(hex_obj, 'explored', False),
+                        'visible': getattr(hex_obj, 'visible', True),
+                        'has_location': getattr(hex_obj, 'has_location', False),
+                        'location_name': getattr(hex_obj, 'location_name', ''),
+                        'elevation': getattr(hex_obj, 'elevation', 0),
+                        'description': getattr(hex_obj, 'description', 'An unexplored hex.')
+                    })
+
         print(f"get_map_data: returning {len(hexes)} visible hexes out of {total_hexes} total hexes")
         if hexes:
             print(f"Sample visible hex: {hexes[0]}")
@@ -1034,25 +1053,28 @@ def new_game():
         # Check if there's an existing map session with this seed
         existing_map_session = None
         for map_id, map_data in games.items():
-            if (isinstance(map_data, dict) and 
+            if (isinstance(map_data, dict) and
                 map_data.get('type') == 'generator' and
                 map_data.get('seed') == seed):
                 existing_map_session = map_id
                 break
-        
-        # Clear old game sessions with the same seed to prevent old players appearing
-        sessions_to_remove = []
-        for game_id, game_data in games.items():
-            if (isinstance(game_data, WebGameSession) and 
-                hasattr(game_data, 'seed') and game_data.seed == seed):
-                sessions_to_remove.append(game_id)
-        
-        for old_session_id in sessions_to_remove:
-            print(f"Removing old game session: {old_session_id}")
-            del games[old_session_id]
-        
+
+        # MULTIPLAYER FIX: Do NOT remove old sessions - allow multiple players with same seed
+        # The old code deleted ALL players when a new one joined, breaking multiplayer
+        # OLD CODE (removed to fix multiplayer):
+        # sessions_to_remove = []
+        # for game_id, game_data in games.items():
+        #     if (isinstance(game_data, WebGameSession) and
+        #         hasattr(game_data, 'seed') and game_data.seed == seed):
+        #         sessions_to_remove.append(game_id)
+        # for old_session_id in sessions_to_remove:
+        #     print(f"Removing old game session: {old_session_id}")
+        #     del games[old_session_id]
+
         # Create new game session with streaming exploration
-        game = WebGameSession(session_id, seed, player_name, player_color)
+        # Extract master_session_id if this is a player joining a master session
+        master_session_id = data.get('master_session_id') if data else None
+        game = WebGameSession(session_id, seed, player_name, player_color, master_session_id)
         print(f"[SUCCESS] WebGameSession created - session: {session_id}, final seed: {game.seed}, player: {player_name}")
         
         if existing_map_session:

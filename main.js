@@ -16035,6 +16035,7 @@ var AuthView = class extends import_obsidian2.ItemView {
         console.log(`\u{1F3AE} Creating player game with seed ${masterSeed}, player: ${(_a = this.plugin.authState.user) == null ? void 0 : _a.username}`);
         const gameResponse = await this.plugin.apiClient.post("/api/new_game", {
           seed: masterSeed,
+          master_session_id: sessionId,
           player_name: (_b = this.plugin.authState.user) == null ? void 0 : _b.username,
           player_color: (_c = this.plugin.authState.user) == null ? void 0 : _c.playerColor
         });
