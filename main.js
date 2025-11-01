@@ -11598,7 +11598,7 @@ var require_follow_redirects = __commonJS({
 __export(exports, {
   default: () => HexcrawlPlugin
 });
-var import_obsidian3 = __toModule(require("obsidian"));
+var import_obsidian4 = __toModule(require("obsidian"));
 
 // node_modules/axios/lib/helpers/bind.js
 "use strict";
@@ -14893,6 +14893,13 @@ var CustomHexMap = class {
     this.panY = 0;
     this.isDragging = false;
     this.lastMousePos = { x: 0, y: 0 };
+    this.renderTimeout = null;
+    this.isRendering = false;
+    this.isResizing = false;
+    this.brushMode = false;
+    this.brushSize = 1;
+    this.hoveredHex = null;
+    this.brushPreviewHexes = [];
     this.options = {
       width: container.clientWidth || 800,
       height: container.clientHeight || 600,
@@ -14926,7 +14933,9 @@ var CustomHexMap = class {
     this.canvas.addEventListener("wheel", this.handleWheel.bind(this), { passive: false });
     if (window.ResizeObserver) {
       const resizeObserver = new ResizeObserver(() => {
-        this.resize();
+        requestAnimationFrame(() => {
+          this.resize();
+        });
       });
       resizeObserver.observe(this.canvas.parentElement);
     }
@@ -14943,11 +14952,34 @@ var CustomHexMap = class {
       const dy = currentPos.y - this.lastMousePos.y;
       this.panX += dx;
       this.panY += dy;
-      this.render();
+      if (this.onManualInteraction) {
+        this.onManualInteraction();
+      }
+      this.renderDebounced();
     } else {
       const hex = this.getHexAtPixel(currentPos.x, currentPos.y);
       if (this.onHexHover) {
         this.onHexHover(hex);
+      }
+      if (this.brushMode) {
+        let hexCoords;
+        if (hex) {
+          hexCoords = { x: hex.x, y: hex.y };
+        } else {
+          const coords = this.pixelToOffset(currentPos.x, currentPos.y);
+          hexCoords = { x: coords.x, y: coords.y };
+        }
+        if (!this.hoveredHex || this.hoveredHex.x !== hexCoords.x || this.hoveredHex.y !== hexCoords.y) {
+          this.hoveredHex = hexCoords;
+          this.updateBrushPreview(hexCoords);
+          this.renderDebounced();
+        }
+      } else {
+        if (this.hoveredHex) {
+          this.hoveredHex = null;
+          this.brushPreviewHexes = [];
+          this.renderDebounced();
+        }
       }
     }
     this.lastMousePos = currentPos;
@@ -14957,33 +14989,60 @@ var CustomHexMap = class {
     this.canvas.style.cursor = "grab";
   }
   handleClick(event) {
-    if (!this.isDragging) {
+    if (!this.isDragging && this.onHexClick) {
       const hex = this.getHexAtPixel(event.offsetX, event.offsetY);
-      if (hex && this.onHexClick) {
-        this.onHexClick(hex);
+      if (hex) {
+        this.onHexClick(hex, event);
+      } else {
+        const coords = this.pixelToOffset(event.offsetX, event.offsetY);
+        const virtualHex = {
+          x: coords.x,
+          y: coords.y,
+          terrain: "water",
+          explored: true
+        };
+        this.onHexClick(virtualHex, event);
       }
     }
   }
   handleWheel(event) {
     event.preventDefault();
+    if (this.onManualInteraction) {
+      this.onManualInteraction();
+    }
     const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
     const newZoom = Math.max(0.1, Math.min(3, this.zoom * zoomFactor));
     const rect = this.canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
-    const zoomChange = newZoom / this.zoom;
-    this.panX = mouseX - (mouseX - this.panX) * zoomChange;
-    this.panY = mouseY - (mouseY - this.panY) * zoomChange;
+    const worldX = (mouseX - this.panX - this.options.width / 2) / this.zoom;
+    const worldY = (mouseY - this.panY - this.options.height / 2) / this.zoom;
+    const oldZoom = this.zoom;
     this.zoom = newZoom;
-    this.render();
+    this.panX = mouseX - worldX * this.zoom - this.options.width / 2;
+    this.panY = mouseY - worldY * this.zoom - this.options.height / 2;
+    this.renderDebounced();
   }
   resize() {
+    if (this.isResizing)
+      return;
     const parent = this.canvas.parentElement;
-    this.options.width = parent.clientWidth;
-    this.options.height = parent.clientHeight;
-    this.canvas.width = this.options.width;
-    this.canvas.height = this.options.height;
-    this.render();
+    const newWidth = parent.clientWidth;
+    const newHeight = parent.clientHeight;
+    if (newWidth === this.options.width && newHeight === this.options.height) {
+      return;
+    }
+    this.isResizing = true;
+    const panAdjustX = (newWidth - this.options.width) / 2;
+    const panAdjustY = (newHeight - this.options.height) / 2;
+    this.options.width = newWidth;
+    this.options.height = newHeight;
+    this.canvas.width = newWidth;
+    this.canvas.height = newHeight;
+    this.panX += panAdjustX;
+    this.panY += panAdjustY;
+    this.isResizing = false;
+    this.renderDebounced();
   }
   offsetToPixel(q, r) {
     const pixelX = this.options.hexRadius * (3 / 2 * q);
@@ -15018,7 +15077,7 @@ var CustomHexMap = class {
     const { x, y } = this.pixelToOffset(pixelX, pixelY);
     return this.mapData.hexes.find((hex) => hex.x === x && hex.y === y) || null;
   }
-  drawHex(center, color, strokeColor = "#666", lineWidth = 1) {
+  drawHex(center, color, strokeColor = "#000", lineWidth = 1) {
     const radius = this.options.hexRadius * this.zoom;
     this.ctx.save();
     this.ctx.beginPath();
@@ -15035,9 +15094,9 @@ var CustomHexMap = class {
     this.ctx.closePath();
     this.ctx.fillStyle = color;
     this.ctx.fill();
-    if (this.options.showGrid && lineWidth > 0) {
+    if (this.options.showGrid && lineWidth > 0 && this.zoom > 0.5) {
       this.ctx.strokeStyle = strokeColor;
-      this.ctx.lineWidth = lineWidth;
+      this.ctx.lineWidth = lineWidth * this.zoom;
       this.ctx.stroke();
     }
     this.ctx.restore();
@@ -15046,7 +15105,7 @@ var CustomHexMap = class {
     if (!this.options.showCoordinates || this.zoom < 0.5)
       return;
     this.ctx.save();
-    this.ctx.fillStyle = "var(--text-muted)";
+    this.ctx.fillStyle = "#000";
     this.ctx.font = `${Math.max(8, 12 * this.zoom)}px var(--font-interface)`;
     this.ctx.textAlign = "center";
     this.ctx.textBaseline = "middle";
@@ -15071,6 +15130,30 @@ var CustomHexMap = class {
     this.ctx.fillText("\u2690", center.x, center.y);
     this.ctx.restore();
   }
+  drawNamedPlayerMarker(center, name, color) {
+    const size = Math.max(10, 18 * this.zoom);
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.arc(center.x, center.y, size, 0, 2 * Math.PI);
+    this.ctx.fillStyle = color;
+    this.ctx.fill();
+    this.ctx.strokeStyle = "#000";
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+    this.ctx.fillStyle = "#fff";
+    this.ctx.font = `bold ${Math.max(10, size * 0.8)}px Arial`;
+    this.ctx.textAlign = "center";
+    this.ctx.textBaseline = "middle";
+    this.ctx.fillText(name.charAt(0).toUpperCase(), center.x, center.y);
+    if (this.zoom > 0.7) {
+      this.ctx.fillStyle = "#000";
+      this.ctx.font = `${Math.max(8, 10 * this.zoom)}px Arial`;
+      this.ctx.textAlign = "center";
+      this.ctx.textBaseline = "top";
+      this.ctx.fillText(name, center.x, center.y + size + 2);
+    }
+    this.ctx.restore();
+  }
   getTerrainColor(terrain) {
     const colors = {
       "plains": "#90EE90",
@@ -15087,12 +15170,27 @@ var CustomHexMap = class {
     };
     return colors[(terrain == null ? void 0 : terrain.toLowerCase()) || ""] || "#D3D3D3";
   }
+  renderDebounced() {
+    if (this.renderTimeout !== null) {
+      clearTimeout(this.renderTimeout);
+    }
+    this.renderTimeout = window.setTimeout(() => {
+      this.renderTimeout = null;
+      this.render();
+    }, 16);
+  }
   render() {
+    if (this.isRendering) {
+      console.log("\u{1F6D1} Skipping render - already rendering");
+      return;
+    }
+    this.isRendering = true;
+    console.log("\u{1F3A8} Starting render cycle");
     this.ctx.clearRect(0, 0, this.options.width, this.options.height);
-    const computedStyle = getComputedStyle(this.canvas);
-    const backgroundColor = computedStyle.getPropertyValue("--background-primary") || getComputedStyle(document.documentElement).getPropertyValue("--background-primary") || "#1a1a1a";
-    this.ctx.fillStyle = backgroundColor.trim();
+    this.ctx.fillStyle = "#4A90E2";
     this.ctx.fillRect(0, 0, this.options.width, this.options.height);
+    let visibleHexCount = 0;
+    let offScreenCount = 0;
     if (!this.mapData) {
       this.ctx.save();
       this.ctx.fillStyle = "#888";
@@ -15102,16 +15200,20 @@ var CustomHexMap = class {
       this.ctx.fillText("No map data loaded. Join a session or refresh the map.", this.options.width / 2, this.options.height / 2);
       this.ctx.restore();
       console.log("\u{1F5FA}\uFE0F CustomHexMap: No map data available");
+      this.isRendering = false;
       return;
     }
     console.log(`\u{1F5FA}\uFE0F CustomHexMap: Rendering ${this.mapData.hexes.length} hexes, player at:`, this.mapData.player_position);
     console.log("\u{1F5FA}\uFE0F CustomHexMap: First 5 hexes:", this.mapData.hexes.slice(0, 5).map((h) => `(${h.x},${h.y}) ${h.terrain} explored:${h.explored}`));
+    console.log("\u{1F5FA}\uFE0F CustomHexMap: Current pan:", this.panX, this.panY, "zoom:", this.zoom);
     for (const hex of this.mapData.hexes) {
       const center = this.offsetToPixel(hex.x, hex.y);
       const margin = this.options.hexRadius * this.zoom * 2;
       if (center.x < -margin || center.x > this.options.width + margin || center.y < -margin || center.y > this.options.height + margin) {
+        offScreenCount++;
         continue;
       }
+      visibleHexCount++;
       const baseColor = this.getTerrainColor(hex.terrain);
       let hexColor = baseColor;
       if (!hex.explored) {
@@ -15122,7 +15224,7 @@ var CustomHexMap = class {
           hexColor = `rgba(${r}, ${g}, ${b}, 0.6)`;
         }
       }
-      const strokeColor = hex.explored ? "#666" : "#4488ff";
+      const strokeColor = hex.explored ? "#000" : "#4488ff";
       const strokeWidth = hex.explored ? 1 : 2;
       this.drawHex(center, hexColor, strokeColor, strokeWidth);
       if (this.options.showCoordinates) {
@@ -15137,6 +15239,17 @@ var CustomHexMap = class {
     } else {
       console.log("\u26A0\uFE0F No player position data available");
     }
+    if (this.mapData.players && this.mapData.players.length > 0) {
+      console.log("\u{1F3AE} Drawing", this.mapData.players.length, "players");
+      this.mapData.players.forEach((player) => {
+        const playerCenter = this.offsetToPixel(player.x, player.y);
+        this.drawNamedPlayerMarker(playerCenter, player.name, player.color || "#ff00ff");
+      });
+    }
+    console.log(`\u{1F5FA}\uFE0F Visible hexes: ${visibleHexCount}, Off-screen: ${offScreenCount}`);
+    this.renderBrushPreview();
+    this.isRendering = false;
+    console.log("\u2705 Render cycle complete");
   }
   setMapData(mapData) {
     var _a, _b;
@@ -15146,7 +15259,22 @@ var CustomHexMap = class {
       console.log("\u{1F5FA}\uFE0F CustomHexMap: Sample hex:", mapData.hexes[0]);
     }
     this.mapData = mapData;
-    this.render();
+    console.log("\u{1F5FA}\uFE0F CustomHexMap: Map data set, render call deferred to caller");
+  }
+  updatePlayers(players, playerPosition) {
+    if (!this.mapData) {
+      this.mapData = {
+        hexes: [],
+        player_position: playerPosition != null ? playerPosition : null,
+        players: players != null ? players : []
+      };
+    } else {
+      this.mapData.players = players != null ? players : [];
+      if (playerPosition !== void 0) {
+        this.mapData.player_position = playerPosition != null ? playerPosition : null;
+      }
+    }
+    this.renderDebounced();
   }
   centerOnPlayer() {
     var _a;
@@ -15160,23 +15288,32 @@ var CustomHexMap = class {
     const worldY = this.options.hexRadius * (Math.sqrt(3) / 2 * q + Math.sqrt(3) * r);
     this.panX = targetX - worldX * this.zoom - this.options.width / 2;
     this.panY = targetY - worldY * this.zoom - this.options.height / 2;
-    this.render();
+    this.renderDebounced();
+  }
+  centerOnHex(q, r, s) {
+    const targetX = this.options.width / 2;
+    const targetY = this.options.height / 2;
+    const worldX = this.options.hexRadius * (3 / 2 * q);
+    const worldY = this.options.hexRadius * (Math.sqrt(3) / 2 * q + Math.sqrt(3) * r);
+    this.panX = targetX - worldX * this.zoom - this.options.width / 2;
+    this.panY = targetY - worldY * this.zoom - this.options.height / 2;
+    this.renderDebounced();
   }
   setZoom(zoom) {
     this.zoom = Math.max(0.1, Math.min(3, zoom));
-    this.render();
+    this.renderDebounced();
   }
   toggleGrid() {
     this.options.showGrid = !this.options.showGrid;
-    this.render();
+    this.renderDebounced();
   }
   toggleCoordinates() {
     this.options.showCoordinates = !this.options.showCoordinates;
-    this.render();
+    this.renderDebounced();
   }
   toggleFog() {
     this.showFog = !this.showFog;
-    this.render();
+    this.renderDebounced();
   }
   isAdjacentToPlayer(hex) {
     var _a;
@@ -15191,6 +15328,56 @@ var CustomHexMap = class {
     const playerS = -playerQ - playerR;
     const distance = Math.max(Math.abs(hexQ - playerQ), Math.abs(hexR - playerR), Math.abs(hexS - playerS));
     return distance === 1;
+  }
+  setBrushMode(enabled) {
+    this.brushMode = enabled;
+    if (!enabled) {
+      this.hoveredHex = null;
+      this.brushPreviewHexes = [];
+    }
+    this.render();
+  }
+  setBrushSize(size) {
+    this.brushSize = Math.max(1, Math.min(7, size));
+    if (this.brushMode && this.hoveredHex) {
+      this.updateBrushPreview(this.hoveredHex);
+      this.render();
+    }
+  }
+  updateBrushPreview(centerHex) {
+    this.brushPreviewHexes = [];
+    for (let q = -this.brushSize + 1; q < this.brushSize; q++) {
+      for (let r = Math.max(-this.brushSize + 1, -q - this.brushSize + 1); r <= Math.min(this.brushSize - 1, -q + this.brushSize - 1); r++) {
+        const hexX = centerHex.x + q;
+        const hexY = centerHex.y + r;
+        this.brushPreviewHexes.push({ x: hexX, y: hexY });
+      }
+    }
+  }
+  offsetToCube(col, row) {
+    const q = col - (row - (row & 1)) / 2;
+    const r = row;
+    const s = -q - r;
+    return { q, r, s };
+  }
+  cubeToOffset(q, r) {
+    const col = q + (r - (r & 1)) / 2;
+    const row = r;
+    return { col, row };
+  }
+  renderBrushPreview() {
+    if (!this.brushMode || this.brushPreviewHexes.length === 0)
+      return;
+    this.ctx.save();
+    this.ctx.globalAlpha = 0.3;
+    this.ctx.strokeStyle = "#ff6b6b";
+    this.ctx.lineWidth = 2;
+    this.ctx.fillStyle = "#ff6b6b";
+    this.brushPreviewHexes.forEach((hex) => {
+      const screenPos = this.offsetToPixel(hex.x, hex.y);
+      this.drawHex(screenPos, "#ff6b6b", "#ff0000", 2);
+    });
+    this.ctx.restore();
   }
   destroy() {
     if (this.canvas.parentElement) {
@@ -15341,24 +15528,7 @@ var HexcrawlView = class extends import_obsidian.ItemView {
       const isAdjacent = this.isAdjacent(currentQ, currentR, currentS, targetQ, targetR, targetS);
       if (isAdjacent) {
         console.log(`\u{1F3AE} Showing confirmation for move to hex: ${targetQ}, ${targetR}, ${targetS}`);
-        const modal = new HexMoveConfirmModal(this.app, hex, async () => {
-          var _a2, _b;
-          console.log("\u{1F3AE} Movement confirmed, moving to hex:", targetQ, targetR, targetS);
-          await this.plugin.moveToHex(targetQ, targetR, targetS);
-          console.log("\u2705 Movement completed, reloading map data...");
-          await this.plugin.loadMapData();
-          console.log("\u2705 Map data loaded, player position:", (_a2 = this.plugin.mapData) == null ? void 0 : _a2.player_position);
-          if (this.hexMap && this.plugin.mapData) {
-            console.log("\u{1F504} Updating hex map after movement with", ((_b = this.plugin.mapData.hexes) == null ? void 0 : _b.length) || 0, "hexes");
-            this.hexMap.setMapData(this.plugin.mapData);
-            console.log("\u{1F3AF} Centering on player...");
-            this.hexMap.centerOnPlayer();
-          } else {
-            console.error("\u274C No hex map or map data available after movement");
-          }
-          this.updateStatusDisplays();
-          console.log("\u2705 Movement process completed");
-        });
+        const modal = new HexMoveConfirmModal(this.app, hex);
         modal.open();
       } else if (targetQ === currentQ && targetR === currentR && targetS === currentS) {
         console.log("\u{1F4CD} Already at this hex");
@@ -15379,12 +15549,11 @@ var HexcrawlView = class extends import_obsidian.ItemView {
   }
 };
 var HexMoveConfirmModal = class extends import_obsidian.Modal {
-  constructor(app, hex, onConfirm) {
+  constructor(app, hex) {
     super(app);
     this.isWaitingForApproval = false;
     this.approvalCheckInterval = null;
     this.hex = hex;
-    this.onConfirm = onConfirm;
     this.plugin = app.plugins.plugins["obsidian-hexcrawl"];
   }
   onOpen() {
@@ -15412,8 +15581,14 @@ var HexMoveConfirmModal = class extends import_obsidian.Modal {
     buttonContainer.style.gap = "10px";
     buttonContainer.style.marginTop = "20px";
     buttonContainer.style.justifyContent = "center";
-    new import_obsidian.ButtonComponent(buttonContainer).setButtonText("Go").setCta().onClick(async () => {
-      await this.requestMovement();
+    const goButton = new import_obsidian.ButtonComponent(buttonContainer).setButtonText("Go").setCta().onClick(async () => {
+      goButton.setDisabled(true);
+      try {
+        await this.requestMovement();
+      } catch (error) {
+        goButton.setDisabled(false);
+        throw error;
+      }
     });
     new import_obsidian.ButtonComponent(buttonContainer).setButtonText("Go to Note").onClick(async () => {
       await this.goToHexNote();
@@ -15531,7 +15706,7 @@ ${this.hex.description || "No description yet."}
   }
   startApprovalCheck() {
     this.approvalCheckInterval = window.setInterval(async () => {
-      var _a, _b, _c;
+      var _a, _b, _c, _d, _e, _f;
       try {
         const response = await ((_a = this.plugin.apiClient) == null ? void 0 : _a.get("/api/check_movement_status", {
           params: {
@@ -15541,9 +15716,22 @@ ${this.hex.description || "No description yet."}
         if (((_b = response == null ? void 0 : response.data) == null ? void 0 : _b.status) === "approved") {
           this.stopApprovalCheck();
           new import_obsidian.Notice("Movement approved!");
-          this.onConfirm();
+          try {
+            await this.plugin.loadMapData();
+            console.log("\u2705 Map data loaded after movement approval, player position:", (_c = this.plugin.mapData) == null ? void 0 : _c.player_position);
+            const hexcrawlView = (_d = this.app.workspace.getLeavesOfType("hexcrawl-view")[0]) == null ? void 0 : _d.view;
+            if ((hexcrawlView == null ? void 0 : hexcrawlView.hexMap) && this.plugin.mapData) {
+              console.log("\u{1F504} Updating hex map after approved movement with", ((_e = this.plugin.mapData.hexes) == null ? void 0 : _e.length) || 0, "hexes");
+              hexcrawlView.hexMap.setMapData(this.plugin.mapData);
+              console.log("\u{1F3AF} Centering on player...");
+              hexcrawlView.hexMap.centerOnPlayer();
+              hexcrawlView.updateStatusDisplays();
+            }
+          } catch (error) {
+            console.error("Failed to update map after movement approval:", error);
+          }
           this.close();
-        } else if (((_c = response == null ? void 0 : response.data) == null ? void 0 : _c.status) === "declined") {
+        } else if (((_f = response == null ? void 0 : response.data) == null ? void 0 : _f.status) === "declined") {
           this.stopApprovalCheck();
           new import_obsidian.Notice("Movement declined by Master");
           this.close();
@@ -15670,6 +15858,7 @@ var AuthView = class extends import_obsidian2.ItemView {
     this.renderServerStatus(container);
   }
   renderRegister(container) {
+    console.log("HEXCRAWL TEST: Rendering register form - BUILD TIME:", new Date().toISOString());
     const formDiv = container.createDiv({ cls: "auth-form" });
     formDiv.createEl("h3", { text: "Create New Account" });
     this.registerForm = {
@@ -15677,7 +15866,8 @@ var AuthView = class extends import_obsidian2.ItemView {
       email: new import_obsidian2.TextComponent(formDiv),
       password: new import_obsidian2.TextComponent(formDiv),
       confirmPassword: new import_obsidian2.TextComponent(formDiv),
-      playerColor: new import_obsidian2.DropdownComponent(formDiv)
+      playerColor: null,
+      role: null
     };
     const usernameSetting = new import_obsidian2.Setting(formDiv).setName("Username").setDesc("Choose a unique username (3-50 characters)");
     this.registerForm.username.inputEl.placeholder = "Username";
@@ -15694,9 +15884,14 @@ var AuthView = class extends import_obsidian2.ItemView {
     this.registerForm.confirmPassword.inputEl.placeholder = "Confirm Password";
     this.registerForm.confirmPassword.inputEl.type = "password";
     confirmSetting.controlEl.appendChild(this.registerForm.confirmPassword.inputEl);
-    const colorSetting = new import_obsidian2.Setting(formDiv).setName("Player Color").setDesc("Choose your player marker color");
-    this.registerForm.playerColor.addOption("#FF6B6B", "\u{1F534} Red").addOption("#4ECDC4", "\u{1F535} Teal").addOption("#45B7D1", "\u{1F537} Blue").addOption("#96CEB4", "\u{1F7E2} Green").addOption("#FECA57", "\u{1F7E1} Yellow").addOption("#FF9FF3", "\u{1F7E3} Pink").addOption("#54A0FF", "\u{1F535} Light Blue").addOption("#5F27CD", "\u{1F7E3} Purple").setValue("#4ECDC4");
-    colorSetting.controlEl.appendChild(this.registerForm.playerColor.selectEl);
+    const colorSetting = new import_obsidian2.Setting(formDiv).setName("Player Color").setDesc("Choose your player marker color").addDropdown((dropdown) => {
+      this.registerForm.playerColor = dropdown;
+      dropdown.addOption("#FF6B6B", "\u{1F534} Red").addOption("#4ECDC4", "\u{1F535} Teal").addOption("#45B7D1", "\u{1F537} Blue").addOption("#96CEB4", "\u{1F7E2} Green").addOption("#FECA57", "\u{1F7E1} Yellow").addOption("#FF9FF3", "\u{1F7E3} Pink").addOption("#54A0FF", "\u{1F535} Light Blue").addOption("#5F27CD", "\u{1F7E3} Purple").setValue("#4ECDC4");
+    });
+    const roleSetting = new import_obsidian2.Setting(formDiv).setName("Account Type").setDesc("Choose your role: Player to join games, Game Master to create and manage worlds").addDropdown((dropdown) => {
+      this.registerForm.role = dropdown;
+      dropdown.addOption("player", "\u{1F3AE} Player - Join existing games").addOption("game_master", "\u{1F451} Game Master - Create and manage worlds").setValue("player");
+    });
     const buttonDiv = formDiv.createDiv({ cls: "auth-buttons" });
     new import_obsidian2.ButtonComponent(buttonDiv).setButtonText("Create Account").setCta().onClick(() => this.handleRegister());
     this.renderServerStatus(container);
@@ -15722,7 +15917,7 @@ var AuthView = class extends import_obsidian2.ItemView {
     }
     this.profileForm = {
       email: new import_obsidian2.TextComponent(profileDiv),
-      playerColor: new import_obsidian2.DropdownComponent(profileDiv),
+      playerColor: null,
       currentPassword: new import_obsidian2.TextComponent(profileDiv),
       newPassword: new import_obsidian2.TextComponent(profileDiv),
       confirmPassword: new import_obsidian2.TextComponent(profileDiv)
@@ -15731,9 +15926,10 @@ var AuthView = class extends import_obsidian2.ItemView {
     const emailSetting = new import_obsidian2.Setting(profileDiv).setName("Email").setDesc("Update your email address");
     this.profileForm.email.setValue(user.email);
     emailSetting.controlEl.appendChild(this.profileForm.email.inputEl);
-    const colorSetting = new import_obsidian2.Setting(profileDiv).setName("Player Color").setDesc("Change your player marker color");
-    this.profileForm.playerColor.addOption("#FF6B6B", "\u{1F534} Red").addOption("#4ECDC4", "\u{1F535} Teal").addOption("#45B7D1", "\u{1F537} Blue").addOption("#96CEB4", "\u{1F7E2} Green").addOption("#FECA57", "\u{1F7E1} Yellow").addOption("#FF9FF3", "\u{1F7E3} Pink").addOption("#54A0FF", "\u{1F535} Light Blue").addOption("#5F27CD", "\u{1F7E3} Purple").setValue(user.playerColor);
-    colorSetting.controlEl.appendChild(this.profileForm.playerColor.selectEl);
+    const colorSetting = new import_obsidian2.Setting(profileDiv).setName("Player Color").setDesc("Change your player marker color").addDropdown((dropdown) => {
+      this.profileForm.playerColor = dropdown;
+      dropdown.addOption("#FF6B6B", "\u{1F534} Red").addOption("#4ECDC4", "\u{1F535} Teal").addOption("#45B7D1", "\u{1F537} Blue").addOption("#96CEB4", "\u{1F7E2} Green").addOption("#FECA57", "\u{1F7E1} Yellow").addOption("#FF9FF3", "\u{1F7E3} Pink").addOption("#54A0FF", "\u{1F535} Light Blue").addOption("#5F27CD", "\u{1F7E3} Purple").setValue(user.playerColor);
+    });
     profileDiv.createEl("h4", { text: "Change Password" });
     profileDiv.createEl("p", { text: "Leave blank to keep current password", cls: "setting-item-description" });
     const currentPassSetting = new import_obsidian2.Setting(profileDiv).setName("Current Password").setDesc("Enter your current password to make changes");
@@ -15829,22 +16025,27 @@ var AuthView = class extends import_obsidian2.ItemView {
         }
         console.log(`\u{1F3AE} Creating new player game in master session: ${sessionId}`);
         const masterResponse = await this.plugin.apiClient.get(`/api/load_map_session/${sessionId}`);
+        console.log(`\u{1F3B2} Master session response:`, masterResponse.data);
         if (!masterResponse.data.success) {
           new import_obsidian2.Notice(`\u274C Master session not found: ${sessionId}`);
           return;
         }
-        const masterSeed = ((_a = masterResponse.data.session) == null ? void 0 : _a.seed) || Math.floor(Math.random() * 1e6);
+        const masterSeed = masterResponse.data.seed || 12345;
+        console.log(`\u{1F3B2} Extracted master seed: ${masterSeed} (will join with this seed)`);
+        console.log(`\u{1F3AE} Creating player game with seed ${masterSeed}, player: ${(_a = this.plugin.authState.user) == null ? void 0 : _a.username}`);
         const gameResponse = await this.plugin.apiClient.post("/api/new_game", {
           seed: masterSeed,
           player_name: (_b = this.plugin.authState.user) == null ? void 0 : _b.username,
           player_color: (_c = this.plugin.authState.user) == null ? void 0 : _c.playerColor
         });
+        console.log(`\u{1F3AE} Player game created:`, gameResponse.data);
         if (gameResponse.data.success || gameResponse.data.session_id) {
           this.plugin.currentSessionId = gameResponse.data.session_id || gameResponse.headers["x-session-id"] || `game_${Date.now()}`;
+          console.log(`\u2705 Player session ID: ${this.plugin.currentSessionId}`);
           await this.plugin.loadMapData();
           this.plugin.settings.lastSessionId = this.plugin.currentSessionId;
           await this.plugin.saveSettings();
-          new import_obsidian2.Notice(`\u2705 Joined as player in master session: ${sessionId}`);
+          new import_obsidian2.Notice(`\u2705 Joined as player with seed ${masterSeed} in master session: ${sessionId}`);
           sessionIdInput.setValue("");
           this.render();
           new import_obsidian2.Notice("You can now open the Hexcrawl Explorer to view the map");
@@ -15916,7 +16117,8 @@ var AuthView = class extends import_obsidian2.ItemView {
       username: this.registerForm.username.getValue().trim(),
       email: this.registerForm.email.getValue().trim(),
       password: this.registerForm.password.getValue(),
-      playerColor: this.registerForm.playerColor.getValue()
+      playerColor: this.registerForm.playerColor.getValue(),
+      role: this.registerForm.role.getValue()
     };
     const confirmPassword = this.registerForm.confirmPassword.getValue();
     if (!registration.username || !registration.email || !registration.password) {
@@ -15999,6 +16201,2475 @@ var AuthView = class extends import_obsidian2.ItemView {
   }
 };
 
+// src/masterView.ts
+var import_obsidian3 = __toModule(require("obsidian"));
+var VIEW_TYPE_MASTER = "hexcrawl-master-view";
+var TERRAIN_TYPES = [
+  { name: "water", color: "#4682B4", icon: "\u{1F30A}" },
+  { name: "forest", color: "#228B22", icon: "\u{1F332}" },
+  { name: "plains", color: "#90EE90", icon: "\u{1F33E}" },
+  { name: "mountains", color: "#696969", icon: "\u26F0\uFE0F" },
+  { name: "desert", color: "#F4A460", icon: "\u{1F3DC}\uFE0F" },
+  { name: "hills", color: "#8FBC8F", icon: "\u26F0" },
+  { name: "swamp", color: "#556B2F", icon: "\u{1F33F}" },
+  { name: "tundra", color: "#F0F8FF", icon: "\u2744\uFE0F" }
+];
+var MasterView = class extends import_obsidian3.ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.hexMap = null;
+    this.mapData = [];
+    this.sessionId = null;
+    this.movementRequests = [];
+    this.players = [];
+    this.selectedTerrain = "plains";
+    this.brushSize = 4;
+    this.currentTool = "normal";
+    this.selectedPlayer = null;
+    this.targetHex = null;
+    this.northDirection = 0;
+    this.updateInterval = null;
+    this.autoRefreshInterval = null;
+    this.isLoadingMovement = false;
+    this.isLoadingPlayers = false;
+    this.movementBackoffUntil = 0;
+    this.playersBackoffUntil = 0;
+    this.socketConnection = null;
+    this.currentSeed = 12345;
+    this.terrainControlsLocked = false;
+    this.mapControlsLocked = false;
+    this.brushControlsLocked = false;
+    this.setSeedButton = null;
+    this.randomSeedButton = null;
+    this.generateTerrainButton = null;
+    this.hasManuallyInteracted = false;
+    this.mapControlsContainer = null;
+    this.mapLockButton = null;
+    this.loadJsonButton = null;
+    this.importImageButton = null;
+    this.brushControlsContainer = null;
+    this.brushLockButton = null;
+    this.brushControlsSection = null;
+    this.saveTimer = null;
+    this.selectedImageFile = null;
+    this.plugin = plugin;
+  }
+  getViewType() {
+    return VIEW_TYPE_MASTER;
+  }
+  getDisplayText() {
+    return "Hexcrawl Master View";
+  }
+  getIcon() {
+    return "crown";
+  }
+  async onOpen() {
+    var _a;
+    if (!((_a = this.plugin.authState.user) == null ? void 0 : _a.isGameMaster)) {
+      new import_obsidian3.Notice("Access denied: Only Game Masters can access this view");
+      this.leaf.detach();
+      return;
+    }
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("hexcrawl-master-view");
+    const mainContainer = container.createDiv("master-container");
+    const sidebar = this.createSidebar(mainContainer);
+    const mapArea = mainContainer.createDiv("master-map-area");
+    mapArea.style.flex = "1";
+    mapArea.style.minHeight = "400px";
+    mapArea.style.position = "relative";
+    const syncButton = mapArea.createEl("button", {
+      text: "\u{1F504}",
+      cls: "map-sync-btn"
+    });
+    syncButton.style.position = "absolute";
+    syncButton.style.top = "10px";
+    syncButton.style.right = "10px";
+    syncButton.style.zIndex = "1000";
+    syncButton.style.background = "var(--interactive-normal)";
+    syncButton.style.border = "1px solid var(--background-modifier-border)";
+    syncButton.style.borderRadius = "6px";
+    syncButton.style.padding = "8px 12px";
+    syncButton.style.cursor = "pointer";
+    syncButton.style.fontSize = "16px";
+    syncButton.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
+    syncButton.title = "Sync all data (world, movement requests, and players)";
+    syncButton.addEventListener("click", async () => {
+      syncButton.disabled = true;
+      syncButton.style.opacity = "0.5";
+      try {
+        await this.fullSync();
+      } finally {
+        syncButton.disabled = false;
+        syncButton.style.opacity = "1";
+      }
+    });
+    syncButton.addEventListener("mouseenter", () => {
+      syncButton.style.background = "var(--interactive-hover)";
+    });
+    syncButton.addEventListener("mouseleave", () => {
+      syncButton.style.background = "var(--interactive-normal)";
+    });
+    const toolButtons = mapArea.createDiv("map-tool-buttons");
+    toolButtons.style.position = "absolute";
+    toolButtons.style.bottom = "10px";
+    toolButtons.style.right = "10px";
+    toolButtons.style.zIndex = "1000";
+    toolButtons.style.display = "flex";
+    toolButtons.style.gap = "8px";
+    const normalBtn = toolButtons.createEl("button", {
+      text: "\u270B",
+      cls: "map-tool-btn active"
+    });
+    normalBtn.title = "Pan and inspect (drag to move map)";
+    normalBtn.dataset.tool = "normal";
+    const brushBtn = toolButtons.createEl("button", {
+      text: "\u{1F58C}\uFE0F",
+      cls: "map-tool-btn"
+    });
+    brushBtn.title = "Brush tool - Paint terrain on multiple hexes";
+    brushBtn.dataset.tool = "brush";
+    [normalBtn, brushBtn].forEach((btn) => {
+      btn.style.background = "var(--interactive-normal)";
+      btn.style.border = "1px solid var(--background-modifier-border)";
+      btn.style.borderRadius = "6px";
+      btn.style.padding = "8px 12px";
+      btn.style.cursor = "pointer";
+      btn.style.fontSize = "18px";
+      btn.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
+      btn.addEventListener("click", () => {
+        const toolType = btn.dataset.tool;
+        this.setTool(toolType);
+        toolButtons.querySelectorAll(".map-tool-btn").forEach((b) => {
+          b.removeClass("active");
+          b.style.background = "var(--interactive-normal)";
+        });
+        btn.addClass("active");
+        btn.style.background = "var(--interactive-accent)";
+        this.updateToolControls();
+      });
+      btn.addEventListener("mouseenter", () => {
+        if (!btn.hasClass("active")) {
+          btn.style.background = "var(--interactive-hover)";
+        }
+      });
+      btn.addEventListener("mouseleave", () => {
+        if (!btn.hasClass("active")) {
+          btn.style.background = "var(--interactive-normal)";
+        }
+      });
+    });
+    normalBtn.style.background = "var(--interactive-accent)";
+    const hintText = mapArea.createDiv("map-hint-text");
+    hintText.textContent = "Ctrl + Click for linked Hex Note";
+    hintText.style.position = "absolute";
+    hintText.style.bottom = "10px";
+    hintText.style.left = "10px";
+    hintText.style.fontSize = "11px";
+    hintText.style.color = "var(--text-muted)";
+    hintText.style.backgroundColor = "var(--background-primary-alt)";
+    hintText.style.padding = "4px 8px";
+    hintText.style.borderRadius = "4px";
+    hintText.style.opacity = "0.8";
+    hintText.style.zIndex = "999";
+    setTimeout(async () => {
+      this.initializeMap(mapArea);
+      await this.loadMasterSession();
+    }, 100);
+  }
+  initializeMap(container) {
+    console.log("\u{1F5FA}\uFE0F Master View: Initializing custom hex map on container");
+    try {
+      this.hexMap = new CustomHexMap(container, {
+        hexRadius: 25,
+        showGrid: true,
+        showCoordinates: true
+      });
+      this.hexMap.onHexClick = (hex, event) => {
+        this.onHexClick(hex, event);
+      };
+      this.hexMap.onHexHover = (hex) => {
+      };
+      this.hexMap.onManualInteraction = () => {
+        this.hasManuallyInteracted = true;
+        console.log("\u{1F3AF} User manually interacted with map - disabling auto-fit");
+      };
+      console.log("\u2705 Master View: CustomHexMap initialized successfully");
+      console.log("\u{1F5FA}\uFE0F Map initialized, waiting for session data...");
+    } catch (error) {
+      console.error("\u274C Master View: Failed to initialize CustomHexMap:", error);
+    }
+  }
+  async onHexClick(hex, event) {
+    if (event && (event.ctrlKey || event.metaKey)) {
+      await this.openHexNote(hex);
+      return;
+    }
+    if (this.currentTool === "brush") {
+      this.paintTerrain(hex.x, hex.y);
+    } else if (this.currentTool === "teleport") {
+      if (this.selectedPlayer) {
+        this.targetHex = [hex.x, hex.y, -(hex.x + hex.y)];
+        await this.confirmTeleport();
+      } else {
+        this.selectTargetHex(hex.x, hex.y);
+      }
+    } else {
+      this.editHex(hex.x, hex.y);
+    }
+    this.startUpdateLoop();
+  }
+  async openHexNote(hex) {
+    try {
+      const noteName = `Hex_${hex.x}_${hex.y}`;
+      const folderPath = this.plugin.settings.hexNotesFolder;
+      const filePath = `${folderPath}/${noteName}.md`;
+      const folder = this.app.vault.getAbstractFileByPath(folderPath);
+      if (!folder) {
+        await this.app.vault.createFolder(folderPath);
+      }
+      let file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!file) {
+        const noteContent = this.generateHexNoteContent(hex);
+        file = await this.app.vault.create(filePath, noteContent);
+      }
+      const leaf = this.app.workspace.getLeaf("tab");
+      await leaf.openFile(file);
+      new import_obsidian3.Notice(`Opened note for Hex ${hex.x},${hex.y}`);
+    } catch (error) {
+      console.error("Failed to open hex note:", error);
+      new import_obsidian3.Notice("Failed to open hex note");
+    }
+  }
+  generateHexNoteContent(hex) {
+    var _a;
+    const content = `# Hex ${hex.x},${hex.y}
+
+## Location Details
+- **Coordinates**: (${hex.x}, ${hex.y})
+- **Terrain**: ${hex.terrain || "Unknown"}
+- **Biome**: ${hex.biome || "Unknown"}
+- **Description**: ${hex.description || "No description available"}
+
+## Features
+${((_a = hex.features) == null ? void 0 : _a.length) ? hex.features.map((f) => `- ${f}`).join("\n") : "- None recorded"}
+
+## Notes
+<!-- Add your notes about this location here -->
+
+## Events
+<!-- Record any significant events that happened here -->
+
+## NPCs
+<!-- List any NPCs encountered at this location -->
+
+## Loot/Resources
+<!-- Note any valuable items or resources found here -->
+`;
+    return content;
+  }
+  editHex(x, y) {
+    const q = x;
+    const r = y;
+    const s = -(q + r);
+    let hex = this.mapData.find((h) => h.q === q && h.r === r && h.s === s);
+    if (!hex) {
+      hex = {
+        q,
+        r,
+        s,
+        x: q,
+        y: r,
+        terrain: this.selectedTerrain,
+        modified: true
+      };
+      this.mapData.push(hex);
+    } else {
+      hex.terrain = this.selectedTerrain;
+      hex.modified = true;
+    }
+    this.scheduleMapSave();
+    this.loadMapData();
+  }
+  createSidebar(container) {
+    const sidebarWrapper = container.createDiv("master-sidebar-wrapper");
+    sidebarWrapper.style.position = "relative";
+    sidebarWrapper.style.display = "flex";
+    sidebarWrapper.style.width = "320px";
+    sidebarWrapper.style.transition = "width 0.3s ease";
+    const sidebar = sidebarWrapper.createDiv("master-sidebar");
+    sidebar.style.width = "320px";
+    sidebar.style.transition = "transform 0.3s ease";
+    sidebar.style.overflow = "auto";
+    const collapseBtn = sidebarWrapper.createEl("button", {
+      text: "\u25C0",
+      cls: "sidebar-collapse-btn"
+    });
+    collapseBtn.style.position = "absolute";
+    collapseBtn.style.left = "320px";
+    collapseBtn.style.top = "50%";
+    collapseBtn.style.transform = "translateY(-50%) translateX(-100%)";
+    collapseBtn.style.width = "20px";
+    collapseBtn.style.height = "40px";
+    collapseBtn.style.backgroundColor = "var(--background-primary)";
+    collapseBtn.style.border = "1px solid var(--background-modifier-border)";
+    collapseBtn.style.borderLeft = "none";
+    collapseBtn.style.borderRadius = "0 4px 4px 0";
+    collapseBtn.style.cursor = "pointer";
+    collapseBtn.style.fontSize = "12px";
+    collapseBtn.style.zIndex = "1001";
+    collapseBtn.style.display = "flex";
+    collapseBtn.style.alignItems = "center";
+    collapseBtn.style.justifyContent = "center";
+    collapseBtn.title = "Collapse/Expand sidebar";
+    collapseBtn.style.transition = "left 0.3s ease";
+    let isCollapsed = false;
+    collapseBtn.addEventListener("click", () => {
+      isCollapsed = !isCollapsed;
+      if (isCollapsed) {
+        sidebar.style.transform = "translateX(-320px)";
+        collapseBtn.textContent = "\u25B6";
+        collapseBtn.style.left = "0";
+        sidebarWrapper.style.width = "20px";
+      } else {
+        sidebar.style.transform = "translateX(0)";
+        collapseBtn.textContent = "\u25C0";
+        collapseBtn.style.left = "320px";
+        sidebarWrapper.style.width = "320px";
+      }
+    });
+    const header = sidebar.createEl("h2", { text: "Master Controls" });
+    const sessionSection = this.createSection(sidebar, "Session Settings");
+    this.createSessionControls(sessionSection);
+    const mapSection = this.createSection(sidebar, "Map Controls");
+    this.createMapControls(mapSection);
+    this.addMapControlsLockButton(mapSection);
+    const brushSection = this.createBrushSection(sidebar);
+    this.createBrushControls(brushSection);
+    const movementSection = this.createSection(sidebar, "Movement Requests");
+    this.createMovementRequestsList(movementSection);
+    const playersSection = this.createSection(sidebar, "Players");
+    this.createPlayersList(playersSection);
+    return sidebarWrapper;
+  }
+  createSection(parent, title) {
+    const section = parent.createDiv("master-section");
+    const header = section.createDiv("section-header");
+    const titleEl = header.createEl("h3", { text: title });
+    const toggleBtn = header.createEl("button", {
+      text: "\u25BC",
+      cls: "section-toggle-btn"
+    });
+    toggleBtn.title = "Collapse/Expand section";
+    const content = section.createDiv("section-content");
+    toggleBtn.addEventListener("click", () => {
+      const isCollapsed = content.hasClass("collapsed");
+      content.toggleClass("collapsed", !isCollapsed);
+      toggleBtn.textContent = isCollapsed ? "\u25BC" : "\u25B6";
+    });
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.style.cursor = "pointer";
+    toggleBtn.style.background = "none";
+    toggleBtn.style.border = "none";
+    toggleBtn.style.cursor = "pointer";
+    toggleBtn.style.fontSize = "12px";
+    toggleBtn.style.padding = "2px 6px";
+    toggleBtn.style.color = "var(--text-muted)";
+    header.addEventListener("click", (e) => {
+      if (e.target !== toggleBtn) {
+        toggleBtn.click();
+      }
+    });
+    return content;
+  }
+  createBrushSection(parent) {
+    const section = parent.createDiv("master-section");
+    section.addClass("brush-controls-section");
+    const header = section.createDiv("section-header");
+    const titleEl = header.createEl("h3", { text: "Brush Controls" });
+    const brushLockBtn = header.createEl("button", {
+      text: this.brushControlsLocked ? "\u{1F513}" : "\u{1F512}",
+      cls: "lock-btn"
+    });
+    brushLockBtn.style.background = "none";
+    brushLockBtn.style.border = "none";
+    brushLockBtn.style.fontSize = "14px";
+    brushLockBtn.style.cursor = "pointer";
+    brushLockBtn.style.padding = "2px 6px";
+    brushLockBtn.style.color = "var(--text-muted)";
+    brushLockBtn.title = this.brushControlsLocked ? "Click to unlock brush controls" : "Click to lock brush controls (prevents accidental changes)";
+    brushLockBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.toggleBrushControlsLock();
+    });
+    this.brushLockButton = brushLockBtn;
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.style.marginBottom = "8px";
+    const content = section.createDiv("section-content");
+    return content;
+  }
+  createSessionControls(section) {
+    const controls = section.createDiv("session-controls");
+    const nameGroup = controls.createDiv("session-name-group");
+    nameGroup.createEl("label", { text: "Session Name:" });
+    const nameInput = nameGroup.createEl("input", {
+      type: "text",
+      placeholder: "Master Session",
+      value: "Master Session"
+    });
+    const updateBtn = nameGroup.createEl("button", {
+      text: "Update",
+      cls: "master-btn small"
+    });
+    updateBtn.addEventListener("click", () => {
+      this.updateSessionName(nameInput.value);
+    });
+    const info = controls.createDiv("session-info");
+    info.createEl("span", { text: "Type: Master Session", cls: "session-type" });
+    const sessionIdContainer = info.createDiv("session-id-container");
+    sessionIdContainer.createEl("label", { text: "Session ID:" });
+    const sessionIdDisplay = sessionIdContainer.createEl("span", {
+      text: this.sessionId || "Not loaded",
+      cls: "session-id-value clickable-session-id",
+      title: "Click to copy session ID"
+    });
+    sessionIdContainer.style.marginTop = "8px";
+    sessionIdContainer.style.fontSize = "12px";
+    sessionIdDisplay.style.fontFamily = "monospace";
+    sessionIdDisplay.style.backgroundColor = "var(--background-primary-alt)";
+    sessionIdDisplay.style.padding = "2px 6px";
+    sessionIdDisplay.style.borderRadius = "3px";
+    sessionIdDisplay.style.marginLeft = "8px";
+    sessionIdDisplay.style.cursor = "pointer";
+    sessionIdDisplay.style.userSelect = "all";
+    sessionIdDisplay.addEventListener("click", async () => {
+      if (this.sessionId) {
+        await navigator.clipboard.writeText(this.sessionId);
+        const originalText = sessionIdDisplay.textContent;
+        sessionIdDisplay.textContent = "Copied!";
+        sessionIdDisplay.style.backgroundColor = "var(--interactive-success)";
+        setTimeout(() => {
+          sessionIdDisplay.textContent = originalText;
+          sessionIdDisplay.style.backgroundColor = "var(--background-primary-alt)";
+        }, 1500);
+      }
+    });
+  }
+  createMapControls(section) {
+    var _a;
+    const controls = section.createDiv("map-controls");
+    this.mapControlsContainer = controls;
+    const loadJsonBtn = controls.createEl("button", {
+      text: "Load JSON Map",
+      cls: "master-btn"
+    });
+    loadJsonBtn.addEventListener("click", () => {
+      if (!this.mapControlsLocked) {
+        this.loadJsonMap();
+      }
+    });
+    this.loadJsonButton = loadJsonBtn;
+    const importImageBtn = controls.createEl("button", {
+      text: "Import Image Map",
+      cls: "master-btn"
+    });
+    importImageBtn.addEventListener("click", () => {
+      if (!this.mapControlsLocked) {
+        this.showImageImportModal();
+      }
+    });
+    this.importImageButton = importImageBtn;
+    const terrainGroup = controls.createDiv("terrain-generation-group");
+    terrainGroup.style.position = "relative";
+    terrainGroup.style.border = "1px solid var(--background-modifier-border)";
+    terrainGroup.style.borderRadius = "4px";
+    terrainGroup.style.padding = "8px";
+    terrainGroup.style.marginBottom = "8px";
+    const unlockBtn = terrainGroup.createEl("button", {
+      text: "\u{1F513}",
+      cls: "unlock-btn"
+    });
+    unlockBtn.style.position = "absolute";
+    unlockBtn.style.top = "4px";
+    unlockBtn.style.right = "4px";
+    unlockBtn.style.background = "none";
+    unlockBtn.style.border = "none";
+    unlockBtn.style.fontSize = "14px";
+    unlockBtn.style.cursor = "pointer";
+    unlockBtn.style.padding = "2px";
+    unlockBtn.title = "Click to unlock terrain generation controls";
+    unlockBtn.addEventListener("click", () => this.unlockTerrainControls());
+    const setSeedBtn = terrainGroup.createEl("button", {
+      text: "Set Seed",
+      cls: "master-btn"
+    });
+    this.setSeedButton = setSeedBtn;
+    setSeedBtn.addEventListener("click", () => {
+      if (!this.terrainControlsLocked) {
+        this.showSetSeedModal();
+      }
+    });
+    const randomSeedBtn = terrainGroup.createEl("button", {
+      text: "Random Seed",
+      cls: "master-btn"
+    });
+    this.randomSeedButton = randomSeedBtn;
+    randomSeedBtn.addEventListener("click", () => {
+      if (!this.terrainControlsLocked) {
+        this.generateRandomSeed();
+      }
+    });
+    const generateBtn = terrainGroup.createEl("button", {
+      text: "\u{1F30D} Generate Terrain",
+      cls: "master-btn generate-btn"
+    });
+    this.generateTerrainButton = generateBtn;
+    generateBtn.addEventListener("click", () => {
+      this.lockTerrainControls();
+      this.generateTerrain();
+    });
+    const resetViewBtn = controls.createEl("button", {
+      text: "\u{1F3AF} Reset View",
+      cls: "master-btn reset-view-btn"
+    });
+    resetViewBtn.addEventListener("click", () => this.resetView());
+    const exportJsonBtn = controls.createEl("button", {
+      text: "\u{1F4BE} Export to JSON",
+      cls: "master-btn export-json-btn"
+    });
+    exportJsonBtn.addEventListener("click", () => this.saveAsJson());
+    const seedDisplay = controls.createDiv("seed-display");
+    seedDisplay.createEl("label", { text: "Current Seed:" });
+    const seedValue = seedDisplay.createEl("span", {
+      text: ((_a = this.currentSeed) == null ? void 0 : _a.toString()) || "None",
+      cls: "seed-value"
+    });
+    this.updateTerrainControlsUI();
+    this.startAutoRefresh();
+  }
+  createToolSelector(section) {
+    const selector = section.createDiv("tool-selector");
+    const tools = [
+      { id: "normal", name: "Normal", desc: "Pan and inspect" },
+      { id: "brush", name: "Brush", desc: "Paint terrain" },
+      { id: "teleport", name: "Teleport", desc: "Move players" }
+    ];
+    tools.forEach((tool) => {
+      const btn = selector.createEl("button", {
+        cls: `tool-btn ${tool.id === this.currentTool ? "active" : ""}`
+      });
+      btn.dataset.tool = tool.id;
+      const strong = btn.createEl("strong", { text: tool.name });
+      btn.createEl("br");
+      const small = btn.createEl("small", { text: tool.desc });
+      btn.addEventListener("click", () => {
+        this.setTool(tool.id);
+        selector.querySelectorAll(".tool-btn").forEach((b) => b.removeClass("active"));
+        btn.addClass("active");
+        this.updateToolControls();
+      });
+    });
+    const brushControls = section.createDiv("brush-controls hidden");
+    const sizeControl = brushControls.createDiv("brush-size");
+    sizeControl.createEl("label", { text: "Brush Size:" });
+    const sizeSlider = sizeControl.createEl("input");
+    sizeSlider.type = "range";
+    sizeSlider.min = "1";
+    sizeSlider.max = "10";
+    sizeSlider.value = this.brushSize.toString();
+    const sizeDisplay = sizeControl.createEl("span", { text: this.brushSize.toString() });
+    sizeSlider.addEventListener("input", () => {
+      this.brushSize = parseInt(sizeSlider.value);
+      sizeDisplay.textContent = sizeSlider.value;
+    });
+    const teleportControls = section.createDiv("teleport-controls hidden");
+    teleportControls.createEl("h4", { text: "Player Teleport" });
+    const playerSelection = teleportControls.createDiv("player-selection");
+    playerSelection.createEl("label", { text: "Select Player:" });
+    const playerSelect = playerSelection.createEl("select", {
+      cls: "player-select"
+    });
+    const targetDisplay = teleportControls.createDiv("teleport-target");
+    targetDisplay.createEl("label", { text: "Target Location:" });
+    const targetInfo = targetDisplay.createDiv("target-display");
+    targetInfo.textContent = "Click on map to select target";
+    const confirmBtn = teleportControls.createEl("button", {
+      text: "Teleport Player",
+      cls: "teleport-btn",
+      attr: { disabled: "true" }
+    });
+    confirmBtn.addEventListener("click", () => this.confirmTeleport());
+    const northControl = section.createDiv("north-control");
+    northControl.createEl("label", { text: "North Direction:" });
+    const northSlider = northControl.createEl("input");
+    northSlider.type = "range";
+    northSlider.min = "0";
+    northSlider.max = "359";
+    northSlider.value = this.northDirection.toString();
+    const northDisplay = northControl.createEl("span", { text: `${this.northDirection}\xB0` });
+    const resetNorthBtn = northControl.createEl("button", {
+      text: "Reset",
+      cls: "master-btn small"
+    });
+    northSlider.addEventListener("input", () => {
+      this.northDirection = parseInt(northSlider.value);
+      northDisplay.textContent = `${this.northDirection}\xB0`;
+    });
+    resetNorthBtn.addEventListener("click", () => {
+      this.northDirection = 0;
+      northSlider.value = "0";
+      northDisplay.textContent = "0\xB0";
+    });
+  }
+  createBrushControls(section) {
+    const controls = section.createDiv("brush-controls");
+    this.brushControlsContainer = controls;
+    const sizeControl = controls.createDiv("brush-size-control");
+    sizeControl.createEl("h4", { text: "Brush Size:" });
+    const sizeContainer = sizeControl.createDiv("size-container");
+    sizeContainer.style.display = "flex";
+    sizeContainer.style.alignItems = "center";
+    sizeContainer.style.gap = "10px";
+    const sizeSlider = sizeContainer.createEl("input");
+    sizeSlider.type = "range";
+    sizeSlider.min = "1";
+    sizeSlider.max = "7";
+    sizeSlider.value = this.brushSize.toString();
+    sizeSlider.style.flex = "1";
+    const sizeDisplay = sizeContainer.createEl("span", {
+      text: `${this.brushSize} hexes`,
+      cls: "size-display"
+    });
+    sizeDisplay.style.minWidth = "60px";
+    sizeDisplay.style.fontSize = "12px";
+    sizeSlider.addEventListener("input", () => {
+      var _a, _b;
+      this.brushSize = parseInt(sizeSlider.value);
+      sizeDisplay.textContent = `${this.brushSize} hexes`;
+      if (this.hexMap && this.currentTool === "brush") {
+        (_b = (_a = this.hexMap).setBrushSize) == null ? void 0 : _b.call(_a, this.brushSize);
+        this.hexMap.render();
+      }
+    });
+    controls.createEl("h4", { text: "Select Terrain:" });
+    const buttons = controls.createDiv("terrain-buttons");
+    TERRAIN_TYPES.forEach((terrain) => {
+      const btn = buttons.createEl("button", {
+        cls: `terrain-btn ${terrain.name === this.selectedTerrain ? "active" : ""}`
+      });
+      btn.dataset.terrain = terrain.name;
+      if (terrain.icon) {
+        btn.createEl("span", { text: terrain.icon, cls: "terrain-icon" });
+      }
+      btn.createEl("span", { text: terrain.name.charAt(0).toUpperCase() + terrain.name.slice(1) });
+      const colorIndicator = btn.createDiv("terrain-color");
+      colorIndicator.style.backgroundColor = terrain.color;
+      btn.addEventListener("click", () => {
+        this.selectedTerrain = terrain.name;
+        buttons.querySelectorAll(".terrain-btn").forEach((b) => b.removeClass("active"));
+        btn.addClass("active");
+      });
+    });
+    this.brushControlsSection = controls;
+  }
+  createMovementRequestsList(section) {
+    const header = section.createDiv("movement-requests-header");
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.style.marginBottom = "8px";
+    header.style.cursor = "pointer";
+    const title = header.createEl("span", { text: "Movement Requests" });
+    title.style.fontWeight = "bold";
+    const toggleBtn = header.createEl("button", { text: "\u25BC", cls: "toggle-btn" });
+    toggleBtn.style.background = "none";
+    toggleBtn.style.border = "none";
+    toggleBtn.style.cursor = "pointer";
+    toggleBtn.style.fontSize = "12px";
+    const container = section.createDiv("movement-requests-container");
+    const refreshBtn = container.createEl("button", {
+      text: "Refresh",
+      cls: "master-btn refresh-btn"
+    });
+    refreshBtn.style.width = "100%";
+    refreshBtn.style.marginBottom = "8px";
+    refreshBtn.addEventListener("click", () => this.loadMovementRequests());
+    const listContainer = container.createDiv("approval-list-container");
+    listContainer.style.maxHeight = "200px";
+    listContainer.style.overflowY = "auto";
+    listContainer.style.border = "1px solid var(--background-modifier-border)";
+    listContainer.style.borderRadius = "4px";
+    listContainer.style.padding = "4px";
+    const list = listContainer.createDiv("approval-list");
+    let isCollapsed = false;
+    header.addEventListener("click", () => {
+      isCollapsed = !isCollapsed;
+      container.style.display = isCollapsed ? "none" : "block";
+      toggleBtn.textContent = isCollapsed ? "\u25B6" : "\u25BC";
+    });
+  }
+  createPlayersList(section) {
+    const list = section.createDiv("players-list");
+    const header = list.createDiv("players-header");
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.style.marginBottom = "10px";
+    const countLabel = header.createEl("span", {
+      text: "Players: 0",
+      cls: "players-count"
+    });
+    const refreshBtn = header.createEl("button", {
+      text: "\u{1F504} Refresh",
+      cls: "refresh-players-btn"
+    });
+    refreshBtn.style.fontSize = "12px";
+    refreshBtn.style.padding = "2px 8px";
+    refreshBtn.addEventListener("click", () => this.loadPlayers());
+    const playersContainer = list.createDiv("players-container");
+    playersContainer.style.maxHeight = "300px";
+    playersContainer.style.overflowY = "auto";
+  }
+  updateToolControls() {
+    var _a, _b, _c, _d;
+    const brushControlsSection = this.containerEl.querySelector(".brush-controls-section");
+    if (brushControlsSection) {
+      const shouldShow = this.currentTool === "brush" || this.brushControlsLocked;
+      brushControlsSection.style.display = shouldShow ? "block" : "none";
+    }
+    const mapArea = this.containerEl.querySelector(".master-map-area");
+    if (mapArea) {
+      if (this.currentTool === "brush") {
+        mapArea.style.cursor = "crosshair";
+      } else {
+        mapArea.style.cursor = "grab";
+      }
+    }
+    if (this.hexMap) {
+      (_b = (_a = this.hexMap).setBrushMode) == null ? void 0 : _b.call(_a, this.currentTool === "brush");
+      if (this.currentTool === "brush") {
+        (_d = (_c = this.hexMap).setBrushSize) == null ? void 0 : _d.call(_c, this.brushSize);
+      }
+      this.hexMap.render();
+    }
+  }
+  setTool(tool) {
+    if (tool === "brush" && this.brushControlsLocked) {
+      return;
+    }
+    this.currentTool = tool;
+    this.targetHex = null;
+    this.selectedPlayer = null;
+    const confirmBtn = this.containerEl.querySelector(".teleport-btn");
+    if (confirmBtn)
+      confirmBtn.disabled = true;
+    this.updateBrushControlsUI();
+  }
+  async loadMasterSession() {
+    try {
+      const response = await this.plugin.apiClient.get("/api/master/session");
+      if (response.data.session_id) {
+        this.currentSeed = response.data.seed;
+        this.updateActiveSession(response.data.session_id);
+        this.updateSessionIdDisplay();
+        await this.loadMapData();
+        await this.loadMovementRequests();
+        await this.loadPlayers();
+        this.startAutoRefresh();
+      } else {
+        await this.createMasterSession();
+      }
+    } catch (error) {
+      console.error("Failed to load master session:", error);
+      new import_obsidian3.Notice("Failed to load master session");
+    }
+  }
+  async createMasterSession() {
+    try {
+      const response = await this.plugin.apiClient.post("/api/master/create_session", {
+        session_name: "Master Session",
+        seed: 12345
+      });
+      this.currentSeed = response.data.seed;
+      this.updateActiveSession(response.data.session_id);
+      new import_obsidian3.Notice("Master session created");
+      this.updateSeedDisplay();
+      this.updateSessionIdDisplay();
+      await this.loadMapData();
+      await this.loadMovementRequests();
+      await this.loadPlayers();
+      this.startAutoRefresh();
+    } catch (error) {
+      console.error("Failed to create master session:", error);
+      new import_obsidian3.Notice("Failed to create master session");
+    }
+  }
+  async loadMapData() {
+    if (!this.sessionId) {
+      console.log("\u26A0\uFE0F loadMapData called but no sessionId available");
+      return;
+    }
+    console.log("\u{1F4CD} loadMapData called with sessionId:", this.sessionId);
+    console.log("\u{1F4CD} hexMap status:", this.hexMap ? "initialized" : "not initialized");
+    try {
+      const response = await this.plugin.apiClient.get(`/api/load_map_session/${this.sessionId}`);
+      console.log("\u{1F5FA}\uFE0F Raw server response for map loading:", response.data);
+      this.mapData = response.data.hexes || [];
+      if (this.hexMap) {
+        const mapData = {
+          hexes: this.mapData.map((hex) => ({
+            x: hex.x || hex.q,
+            y: hex.y || hex.r,
+            terrain: hex.terrain,
+            biome: hex.biome,
+            description: hex.description,
+            explored: hex.explored !== void 0 ? hex.explored : true
+          })),
+          player_position: null,
+          players: this.players.map((p) => ({
+            name: p.name,
+            x: p.q,
+            y: p.r,
+            color: p.color || "#ff00ff"
+          }))
+        };
+        console.log("\u{1F5FA}\uFE0F Master View: Setting map data with", mapData.hexes.length, "hexes");
+        if (mapData.hexes.length > 0) {
+          const xCoords = mapData.hexes.map((h) => h.x);
+          const yCoords = mapData.hexes.map((h) => h.y);
+          const minX = Math.min(...xCoords);
+          const maxX = Math.max(...xCoords);
+          const minY = Math.min(...yCoords);
+          const maxY = Math.max(...yCoords);
+          const centerX = (minX + maxX) / 2;
+          const centerY = (minY + maxY) / 2;
+          console.log("\u{1F5FA}\uFE0F Hex coordinate bounds:", { minX, maxX, minY, maxY, centerX, centerY });
+        }
+        this.hexMap.setMapData(mapData);
+        if (mapData.hexes.length > 0) {
+          const xCoords = mapData.hexes.map((h) => h.x);
+          const yCoords = mapData.hexes.map((h) => h.y);
+          const minX = Math.min(...xCoords);
+          const maxX = Math.max(...xCoords);
+          const minY = Math.min(...yCoords);
+          const maxY = Math.max(...yCoords);
+          const centerX = (minX + maxX) / 2;
+          const centerY = (minY + maxY) / 2;
+          if (!this.hasManuallyInteracted) {
+            const mapWidth = (maxX - minX) * 25 * 1.5;
+            const mapHeight = (maxY - minY) * 25 * Math.sqrt(3);
+            const canvasWidth = this.hexMap.canvas.width;
+            const canvasHeight = this.hexMap.canvas.height;
+            const zoomX = canvasWidth / (mapWidth * 1.2);
+            const zoomY = canvasHeight / (mapHeight * 1.2);
+            const optimalZoom = Math.min(zoomX, zoomY, 1);
+            this.hexMap.zoom = optimalZoom;
+            this.panToCoordinate(centerX, centerY, true);
+            console.log("\u{1F5FA}\uFE0F Auto-fit view (first load):", { centerX, centerY, zoom: optimalZoom, mapWidth, mapHeight });
+          } else {
+            console.log("\u{1F5FA}\uFE0F Skipping auto-fit - user has manually interacted with view");
+          }
+          if (this.hexMap) {
+            console.log("\u{1F5FA}\uFE0F Final render after data load and centering");
+            this.hexMap.render();
+          }
+        }
+        if (mapData.hexes.length === 0) {
+          console.log("\u2139\uFE0F Master View: No hex data found - session may be new. Use terrain generation to create hexes.");
+        }
+      } else {
+        console.log("\u26A0\uFE0F Master View: CustomHexMap not initialized yet, will retry...");
+        setTimeout(() => this.loadMapData(), 200);
+      }
+    } catch (error) {
+      console.error("Failed to load map data:", error);
+    }
+  }
+  async loadMovementRequests() {
+    var _a, _b;
+    if (!this.sessionId) {
+      return;
+    }
+    if (this.isLoadingMovement) {
+      return;
+    }
+    if (Date.now() < this.movementBackoffUntil) {
+      return;
+    }
+    this.isLoadingMovement = true;
+    try {
+      const response = await this.plugin.apiClient.get(`/api/get_movement_requests?session_id=${this.sessionId}`, {
+        timeout: 3e4
+      });
+      this.movementRequests = response.data.requests || [];
+      this.movementBackoffUntil = 0;
+      this.updateMovementQueue();
+    } catch (error) {
+      if ((error == null ? void 0 : error.code) === "ECONNABORTED") {
+        console.warn("Movement request polling timed out, backing off");
+        this.movementBackoffUntil = Date.now() + 1e4;
+      } else if (((_a = error == null ? void 0 : error.response) == null ? void 0 : _a.status) === 401 || ((_b = error == null ? void 0 : error.response) == null ? void 0 : _b.status) === 403) {
+        console.warn("Movement request polling unauthorized; stopping auto-refresh");
+        this.updateActiveSession(null);
+        this.updateSessionIdDisplay();
+      } else {
+        console.error("Failed to load movement requests:", error);
+      }
+    } finally {
+      this.isLoadingMovement = false;
+    }
+  }
+  async loadPlayers() {
+    var _a, _b;
+    if (!this.sessionId) {
+      return;
+    }
+    if (this.isLoadingPlayers) {
+      return;
+    }
+    if (Date.now() < this.playersBackoffUntil) {
+      return;
+    }
+    this.isLoadingPlayers = true;
+    try {
+      const response = await this.plugin.apiClient.get(`/api/get_player_positions/${this.sessionId}`, {
+        timeout: 3e4
+      });
+      this.players = response.data.players || [];
+      this.playersBackoffUntil = 0;
+      this.updatePlayerList();
+      this.refreshMapWithPlayers();
+    } catch (error) {
+      if ((error == null ? void 0 : error.code) === "ECONNABORTED") {
+        console.warn("Player position polling timed out, backing off");
+        this.playersBackoffUntil = Date.now() + 1e4;
+      } else if (((_a = error == null ? void 0 : error.response) == null ? void 0 : _a.status) === 401 || ((_b = error == null ? void 0 : error.response) == null ? void 0 : _b.status) === 403) {
+        console.warn("Player position polling unauthorized; stopping auto-refresh");
+        this.updateActiveSession(null);
+        this.updateSessionIdDisplay();
+      } else {
+        console.error("Failed to load players:", error);
+      }
+    } finally {
+      this.isLoadingPlayers = false;
+    }
+  }
+  refreshMapWithPlayers() {
+    if (!this.hexMap || this.mapData.length === 0) {
+      return;
+    }
+    const players = this.players.map((p) => ({
+      name: p.name,
+      x: p.q,
+      y: p.r,
+      color: p.color || "#ff00ff"
+    }));
+    this.hexMap.updatePlayers(players);
+  }
+  updateMovementQueue() {
+    const list = this.containerEl.querySelector(".approval-list");
+    if (!list)
+      return;
+    list.empty();
+    if (this.movementRequests.length === 0) {
+      const noRequests = list.createDiv("no-requests");
+      noRequests.style.color = "var(--text-muted)";
+      noRequests.style.textAlign = "center";
+      noRequests.style.padding = "16px";
+      noRequests.style.fontStyle = "italic";
+      noRequests.textContent = "No pending requests";
+      return;
+    }
+    this.movementRequests.forEach((request) => {
+      const item = list.createDiv("approval-item");
+      item.style.padding = "8px";
+      item.style.marginBottom = "6px";
+      item.style.border = "1px solid var(--background-modifier-border)";
+      item.style.borderRadius = "4px";
+      item.style.backgroundColor = "var(--background-secondary)";
+      const playerSpan = item.createEl("div", { cls: "approval-player" });
+      playerSpan.style.fontWeight = "bold";
+      playerSpan.style.color = "var(--text-normal)";
+      playerSpan.style.marginBottom = "4px";
+      playerSpan.textContent = request.player_name;
+      const targetSpan = item.createEl("div", { cls: "approval-target" });
+      targetSpan.style.fontSize = "12px";
+      targetSpan.style.color = "var(--text-muted)";
+      targetSpan.style.marginBottom = "8px";
+      const [q, r, s] = request.target;
+      targetSpan.textContent = `\u2192 Hex (${q}, ${r})`;
+      const actionsDiv = item.createDiv("approval-actions");
+      actionsDiv.style.display = "flex";
+      actionsDiv.style.gap = "6px";
+      actionsDiv.style.justifyContent = "space-between";
+      const approveBtn = actionsDiv.createEl("button", {
+        text: "Approve",
+        cls: "approval-btn approve"
+      });
+      approveBtn.style.padding = "4px 8px";
+      approveBtn.style.fontSize = "11px";
+      approveBtn.style.borderRadius = "3px";
+      approveBtn.style.border = "1px solid var(--interactive-accent)";
+      approveBtn.style.backgroundColor = "var(--interactive-accent)";
+      approveBtn.style.color = "var(--text-on-accent)";
+      approveBtn.style.cursor = "pointer";
+      approveBtn.style.flex = "1";
+      approveBtn.addEventListener("click", () => this.approveMovement(request.request_id));
+      const declineBtn = actionsDiv.createEl("button", {
+        text: "Decline",
+        cls: "approval-btn decline"
+      });
+      declineBtn.style.padding = "4px 8px";
+      declineBtn.style.fontSize = "11px";
+      declineBtn.style.borderRadius = "3px";
+      declineBtn.style.border = "1px solid #8a4a4a";
+      declineBtn.style.backgroundColor = "#5a2d2d";
+      declineBtn.style.color = "var(--text-normal)";
+      declineBtn.style.cursor = "pointer";
+      declineBtn.style.flex = "1";
+      declineBtn.addEventListener("click", () => this.declineMovement(request.request_id));
+      const centerBtn = actionsDiv.createEl("button", {
+        text: "Center",
+        cls: "approval-btn center"
+      });
+      centerBtn.style.padding = "4px 8px";
+      centerBtn.style.fontSize = "11px";
+      centerBtn.style.borderRadius = "3px";
+      centerBtn.style.border = "1px solid #7a7a4a";
+      centerBtn.style.backgroundColor = "#4a4a2d";
+      centerBtn.style.color = "var(--text-normal)";
+      centerBtn.style.cursor = "pointer";
+      centerBtn.style.flex = "1";
+      centerBtn.addEventListener("click", () => this.centerOnHex(q, r, s));
+      approveBtn.addEventListener("mouseenter", () => {
+        approveBtn.style.backgroundColor = "var(--interactive-accent-hover)";
+      });
+      approveBtn.addEventListener("mouseleave", () => {
+        approveBtn.style.backgroundColor = "var(--interactive-accent)";
+      });
+      declineBtn.addEventListener("mouseenter", () => {
+        declineBtn.style.backgroundColor = "#6a3d3d";
+      });
+      declineBtn.addEventListener("mouseleave", () => {
+        declineBtn.style.backgroundColor = "#5a2d2d";
+      });
+      centerBtn.addEventListener("mouseenter", () => {
+        centerBtn.style.backgroundColor = "#5a5a3d";
+      });
+      centerBtn.addEventListener("mouseleave", () => {
+        centerBtn.style.backgroundColor = "#4a4a2d";
+      });
+    });
+  }
+  async approveMovement(requestId) {
+    try {
+      await this.plugin.apiClient.post("/api/approve_movement", {
+        request_id: requestId,
+        session_id: this.sessionId
+      });
+      new import_obsidian3.Notice("Movement approved");
+      await this.loadMovementRequests();
+      await this.loadPlayers();
+    } catch (error) {
+      console.error("Failed to approve movement:", error);
+      new import_obsidian3.Notice("Failed to approve movement");
+    }
+  }
+  async declineMovement(requestId) {
+    try {
+      await this.plugin.apiClient.post("/api/decline_movement", {
+        request_id: requestId,
+        session_id: this.sessionId
+      });
+      new import_obsidian3.Notice("Movement declined");
+      await this.loadMovementRequests();
+    } catch (error) {
+      console.error("Failed to decline movement:", error);
+      new import_obsidian3.Notice("Failed to decline movement");
+    }
+  }
+  centerOnHex(q, r, s) {
+    if (this.hexMap) {
+      this.hexMap.centerOnHex(q, r, s);
+      new import_obsidian3.Notice(`Centered on hex (${q}, ${r})`);
+    }
+  }
+  updatePlayerList() {
+    const select = this.containerEl.querySelector(".player-select");
+    if (select) {
+      select.empty();
+      if (this.players.length === 0) {
+        const option = select.createEl("option");
+        option.textContent = "No players available";
+        option.value = "";
+      } else {
+        const defaultOption = select.createEl("option");
+        defaultOption.textContent = "Select a player...";
+        defaultOption.value = "";
+        this.players.forEach((player) => {
+          const option = select.createEl("option");
+          option.textContent = `${player.name} (${player.q}, ${player.r})`;
+          option.value = player.name;
+        });
+        select.addEventListener("change", () => {
+          this.selectedPlayer = select.value || null;
+          this.updateTeleportButton();
+        });
+      }
+    }
+    this.updatePlayerListDisplay();
+  }
+  updatePlayerListDisplay() {
+    const container = this.containerEl.querySelector(".players-container");
+    const countLabel = this.containerEl.querySelector(".players-count");
+    if (!container)
+      return;
+    if (countLabel) {
+      countLabel.textContent = `Players: ${this.players.length}`;
+    }
+    container.empty();
+    if (this.players.length === 0) {
+      const emptyMsg = container.createDiv("empty-message");
+      emptyMsg.textContent = "No players in session";
+      emptyMsg.style.textAlign = "center";
+      emptyMsg.style.color = "var(--text-muted)";
+      emptyMsg.style.padding = "20px";
+      return;
+    }
+    this.players.forEach((player) => {
+      const playerItem = container.createDiv("player-item");
+      playerItem.style.display = "flex";
+      playerItem.style.justifyContent = "space-between";
+      playerItem.style.alignItems = "center";
+      playerItem.style.padding = "8px";
+      playerItem.style.marginBottom = "4px";
+      playerItem.style.backgroundColor = "var(--background-primary-alt)";
+      playerItem.style.borderRadius = "4px";
+      const info = playerItem.createDiv("player-info");
+      const nameEl = info.createEl("strong", { text: player.name });
+      nameEl.style.display = "block";
+      const coordsEl = info.createEl("span", {
+        text: `Position: (${player.q}, ${player.r})`
+      });
+      coordsEl.style.fontSize = "12px";
+      coordsEl.style.color = "var(--text-muted)";
+      const centerBtn = playerItem.createEl("button", {
+        text: "\u{1F4CD}",
+        title: `Center on ${player.name}`,
+        cls: "center-player-btn"
+      });
+      centerBtn.style.padding = "4px 8px";
+      centerBtn.style.fontSize = "16px";
+      centerBtn.style.cursor = "pointer";
+      centerBtn.addEventListener("click", () => {
+        this.centerOnPlayer(player);
+      });
+    });
+  }
+  centerOnPlayer(player) {
+    if (!this.hexMap)
+      return;
+    const x = player.q || 0;
+    const y = player.r || 0;
+    this.hexMap.zoom = 1.5;
+    this.panToCoordinate(x, y);
+    new import_obsidian3.Notice(`Centered on ${player.name}`);
+  }
+  selectTargetHex(q, r) {
+    this.targetHex = [q, r, -(q + r)];
+    const display = this.containerEl.querySelector(".target-display");
+    if (display) {
+      display.textContent = `Hex: (${q}, ${r})`;
+    }
+    this.updateTeleportButton();
+  }
+  updateTeleportButton() {
+    const btn = this.containerEl.querySelector(".teleport-btn");
+    if (btn) {
+      btn.disabled = !this.selectedPlayer || !this.targetHex;
+      if (this.selectedPlayer && this.targetHex) {
+        btn.textContent = `Teleport ${this.selectedPlayer} to (${this.targetHex[0]}, ${this.targetHex[1]})`;
+      } else {
+        btn.textContent = "Select player and target hex";
+      }
+    }
+  }
+  async confirmTeleport() {
+    if (!this.selectedPlayer || !this.targetHex || !this.sessionId)
+      return;
+    try {
+      await this.plugin.apiClient.post("/api/teleport_player", {
+        session_id: this.sessionId,
+        player_name: this.selectedPlayer,
+        target_hex: this.targetHex
+      });
+      new import_obsidian3.Notice(`Teleported ${this.selectedPlayer} to (${this.targetHex[0]}, ${this.targetHex[1]})`);
+      this.selectedPlayer = null;
+      this.targetHex = null;
+      const select = this.containerEl.querySelector(".player-select");
+      if (select)
+        select.value = "";
+      const display = this.containerEl.querySelector(".target-display");
+      if (display)
+        display.textContent = "Click on map to select target";
+      this.updateTeleportButton();
+      await this.loadPlayers();
+    } catch (error) {
+      console.error("Failed to teleport player:", error);
+      new import_obsidian3.Notice("Failed to teleport player");
+    }
+  }
+  paintTerrain(x, y) {
+    if (this.hexMap && this.hexMap.brushPreviewHexes) {
+      this.hexMap.brushPreviewHexes.forEach((previewHex) => {
+        const q = previewHex.x;
+        const r = previewHex.y;
+        const s = -(q + r);
+        let hex = this.mapData.find((h) => h.q === q && h.r === r && h.s === s);
+        if (!hex) {
+          hex = {
+            q,
+            r,
+            s,
+            x: q,
+            y: r,
+            terrain: this.selectedTerrain,
+            modified: true
+          };
+          this.mapData.push(hex);
+        } else {
+          hex.terrain = this.selectedTerrain;
+          hex.modified = true;
+        }
+      });
+    } else {
+      const q = x;
+      const r = y;
+      const s = -(q + r);
+      let hex = this.mapData.find((h) => h.q === q && h.r === r && h.s === s);
+      if (!hex) {
+        hex = {
+          q,
+          r,
+          s,
+          x: q,
+          y: r,
+          terrain: this.selectedTerrain,
+          modified: true
+        };
+        this.mapData.push(hex);
+      } else {
+        hex.terrain = this.selectedTerrain;
+        hex.modified = true;
+      }
+    }
+    this.scheduleMapSave();
+    this.updateHexMapDisplay();
+  }
+  updateHexMapDisplay() {
+    if (this.hexMap && this.mapData) {
+      const mapData = {
+        hexes: this.mapData.map((hex) => ({
+          x: hex.x || hex.q,
+          y: hex.y || hex.r,
+          terrain: hex.terrain,
+          biome: hex.biome,
+          description: hex.description,
+          explored: hex.explored !== void 0 ? hex.explored : true
+        })),
+        player_position: null,
+        players: this.players.map((p) => ({
+          name: p.name,
+          x: p.q,
+          y: p.r,
+          color: p.color || "#ff00ff"
+        }))
+      };
+      console.log("\u{1F3A8} Updating hex map display with local data:", mapData.hexes.length, "hexes");
+      this.hexMap.setMapData(mapData);
+      this.hexMap.render();
+    }
+  }
+  getHexesInRadius(center, radius) {
+    const hexes = [];
+    for (let q = -radius + 1; q < radius; q++) {
+      for (let r = Math.max(-radius + 1, -q - radius + 1); r <= Math.min(radius - 1, -q + radius - 1); r++) {
+        const targetQ = center.q + q;
+        const targetR = center.r + r;
+        const targetS = -(targetQ + targetR);
+        let hex = this.mapData.find((h) => h.q === targetQ && h.r === targetR && h.s === targetS);
+        if (!hex) {
+          hex = {
+            q: targetQ,
+            r: targetR,
+            s: targetS,
+            x: targetQ,
+            y: targetR,
+            terrain: "plains",
+            modified: true
+          };
+          this.mapData.push(hex);
+        }
+        hexes.push(hex);
+      }
+    }
+    return hexes;
+  }
+  scheduleMapSave() {
+    if (this.saveTimer)
+      clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => {
+      this.saveMapChanges();
+    }, 1e3);
+  }
+  async saveMapChanges() {
+    if (!this.sessionId)
+      return;
+    const modifiedHexes = this.mapData.filter((h) => h.modified);
+    if (modifiedHexes.length === 0)
+      return;
+    try {
+      await this.plugin.apiClient.post("/api/master/update_terrain", {
+        session_id: this.sessionId,
+        hexes: modifiedHexes.map((h) => ({
+          q: h.q,
+          r: h.r,
+          s: h.s,
+          terrain: h.terrain
+        }))
+      });
+      modifiedHexes.forEach((h) => h.modified = false);
+    } catch (error) {
+      console.error("Failed to save map changes:", error);
+    }
+  }
+  panToCoordinate(hexX, hexY, skipRender = false) {
+    if (!this.hexMap)
+      return;
+    console.log("\u{1F3AF} Panning to coordinate:", hexX, hexY, skipRender ? "(no render)" : "(with render)");
+    const hexRadius = 25;
+    const worldX = hexRadius * (3 / 2 * hexX);
+    const worldY = hexRadius * (Math.sqrt(3) / 2 * hexX + Math.sqrt(3) * hexY);
+    console.log("\u{1F3AF} World coordinates:", worldX, worldY);
+    const canvasWidth = this.hexMap.options.width;
+    const canvasHeight = this.hexMap.options.height;
+    this.hexMap.panX = -worldX * this.hexMap.zoom;
+    this.hexMap.panY = -worldY * this.hexMap.zoom;
+    console.log("\u{1F3AF} Set pan values:", this.hexMap.panX, this.hexMap.panY);
+    if (!skipRender) {
+      setTimeout(() => {
+        if (this.hexMap) {
+          console.log("\u{1F3AF} Triggering render after pan");
+          this.hexMap.render();
+        }
+      }, 50);
+    }
+  }
+  resetView() {
+    console.log("\u{1F3AF} Resetting view - re-enabling auto-fit behavior");
+    this.hasManuallyInteracted = false;
+    this.northDirection = 0;
+    this.updateNorthDisplay();
+    if (this.hexMap) {
+      this.hexMap.zoom = 1;
+      this.hexMap.panX = 0;
+      this.hexMap.panY = 0;
+      this.hexMap.render();
+    }
+    if (this.mapData.length > 0) {
+      console.log("\u{1F3AF} Re-applying auto-fit to current map data");
+      this.loadMapData();
+    }
+  }
+  fitMapToView() {
+    if (this.hexMap && this.mapData.length > 0) {
+      this.hexMap.render();
+    }
+  }
+  updateNorthDisplay() {
+    const slider = this.containerEl.querySelector("[type='range'][max='359']");
+    const display = this.containerEl.querySelector(".north-control span");
+    if (slider)
+      slider.value = this.northDirection.toString();
+    if (display)
+      display.textContent = `${this.northDirection}\xB0`;
+  }
+  updateSeedDisplay() {
+    var _a;
+    const display = this.containerEl.querySelector(".seed-value");
+    if (display) {
+      display.textContent = ((_a = this.currentSeed) == null ? void 0 : _a.toString()) || "None";
+    }
+  }
+  updateSessionIdDisplay() {
+    const display = this.containerEl.querySelector(".session-id-value");
+    if (display) {
+      display.textContent = this.sessionId || "Not loaded";
+    }
+  }
+  async updateSessionName(name) {
+    if (!this.sessionId)
+      return;
+    try {
+      await this.plugin.apiClient.post("/api/master/update_session", {
+        session_id: this.sessionId,
+        session_name: name
+      });
+      new import_obsidian3.Notice("Session name updated");
+    } catch (error) {
+      console.error("Failed to update session name:", error);
+      new import_obsidian3.Notice("Failed to update session name");
+    }
+  }
+  async syncWorld() {
+    if (!this.sessionId)
+      return;
+    try {
+      await this.plugin.apiClient.post("/api/force_sync_world", {
+        session_id: this.sessionId
+      });
+      new import_obsidian3.Notice("World synchronized");
+      await this.loadMapData();
+    } catch (error) {
+      console.error("Failed to sync world:", error);
+      new import_obsidian3.Notice("Failed to sync world");
+    }
+  }
+  async fullSync() {
+    console.log("\u{1F504} Starting full sync...");
+    try {
+      const syncPromises = [
+        this.syncWorld(),
+        this.loadMovementRequests(),
+        this.loadPlayers()
+      ];
+      await Promise.all(syncPromises);
+      if (this.hexMap) {
+        this.refreshMapWithPlayers();
+      }
+      new import_obsidian3.Notice("\u2705 Full sync completed");
+      console.log("\u2705 Full sync completed successfully");
+    } catch (error) {
+      console.error("\u274C Failed to perform full sync:", error);
+      new import_obsidian3.Notice("\u274C Failed to sync data");
+    }
+  }
+  async generateRandomSeed() {
+    const seed = Math.floor(Math.random() * 999999) + 1;
+    this.currentSeed = seed;
+    this.updateSeedDisplay();
+    try {
+      await this.plugin.apiClient.post("/api/master/set_seed", {
+        session_id: this.sessionId,
+        seed
+      });
+      new import_obsidian3.Notice(`Random seed set to ${seed}`);
+    } catch (error) {
+      console.error("Failed to set seed:", error);
+      new import_obsidian3.Notice("Failed to set seed");
+    }
+  }
+  lockTerrainControls() {
+    this.terrainControlsLocked = true;
+    this.updateTerrainControlsUI();
+  }
+  unlockTerrainControls() {
+    this.terrainControlsLocked = false;
+    this.updateTerrainControlsUI();
+  }
+  updateTerrainControlsUI() {
+    if (this.setSeedButton) {
+      this.setSeedButton.disabled = this.terrainControlsLocked;
+      this.setSeedButton.style.opacity = this.terrainControlsLocked ? "0.5" : "1";
+      this.setSeedButton.title = this.terrainControlsLocked ? "Locked: Generate terrain first to unlock" : "Set custom seed";
+    }
+    if (this.randomSeedButton) {
+      this.randomSeedButton.disabled = this.terrainControlsLocked;
+      this.randomSeedButton.style.opacity = this.terrainControlsLocked ? "0.5" : "1";
+      this.randomSeedButton.title = this.terrainControlsLocked ? "Locked: Generate terrain first to unlock" : "Generate random seed";
+    }
+    if (this.generateTerrainButton) {
+      this.generateTerrainButton.disabled = this.terrainControlsLocked;
+      this.generateTerrainButton.style.opacity = this.terrainControlsLocked ? "0.5" : "1";
+      this.generateTerrainButton.title = this.terrainControlsLocked ? "Locked: Terrain generation in progress" : "Generate terrain";
+    }
+    const unlockBtn = document.querySelector(".unlock-btn");
+    if (unlockBtn) {
+      unlockBtn.style.display = this.terrainControlsLocked ? "block" : "none";
+    }
+  }
+  toggleMapControlsLock() {
+    this.mapControlsLocked = !this.mapControlsLocked;
+    this.updateMapControlsUI();
+  }
+  updateMapControlsUI() {
+    if (!this.mapControlsContainer)
+      return;
+    if (this.mapLockButton) {
+      this.mapLockButton.textContent = this.mapControlsLocked ? "\u{1F513}" : "\u{1F512}";
+      this.mapLockButton.title = this.mapControlsLocked ? "Unlock map controls" : "Lock map controls";
+    }
+    const allChildren = Array.from(this.mapControlsContainer.children);
+    const controlButtons = allChildren.filter((el) => !el.classList.contains("lock-btn"));
+    controlButtons.forEach((element) => {
+      if (this.mapControlsLocked) {
+        element.style.display = "none";
+      } else {
+        element.style.display = "";
+      }
+    });
+    if (this.loadJsonButton) {
+      this.loadJsonButton.disabled = this.mapControlsLocked;
+      this.loadJsonButton.style.opacity = this.mapControlsLocked ? "0.5" : "1";
+      this.loadJsonButton.title = this.mapControlsLocked ? "Locked: Unlock map controls to use" : "Load JSON Map";
+    }
+    if (this.importImageButton) {
+      this.importImageButton.disabled = this.mapControlsLocked;
+      this.importImageButton.style.opacity = this.mapControlsLocked ? "0.5" : "1";
+      this.importImageButton.title = this.mapControlsLocked ? "Locked: Unlock map controls to use" : "Import Image Map";
+    }
+    if (this.setSeedButton) {
+      this.setSeedButton.disabled = this.mapControlsLocked || this.terrainControlsLocked;
+      this.setSeedButton.style.opacity = this.mapControlsLocked || this.terrainControlsLocked ? "0.5" : "1";
+    }
+    if (this.randomSeedButton) {
+      this.randomSeedButton.disabled = this.mapControlsLocked || this.terrainControlsLocked;
+      this.randomSeedButton.style.opacity = this.mapControlsLocked || this.terrainControlsLocked ? "0.5" : "1";
+    }
+    if (this.generateTerrainButton) {
+      this.generateTerrainButton.disabled = this.mapControlsLocked || this.terrainControlsLocked;
+      this.generateTerrainButton.style.opacity = this.mapControlsLocked || this.terrainControlsLocked ? "0.5" : "1";
+    }
+  }
+  toggleBrushControlsLock() {
+    this.brushControlsLocked = !this.brushControlsLocked;
+    if (this.brushControlsLocked) {
+      this.setTool("normal");
+      const toolButtons = this.containerEl.querySelectorAll(".map-tool-btn");
+      toolButtons.forEach((btn) => {
+        const button = btn;
+        if (button.dataset.tool === "normal") {
+          button.addClass("active");
+          button.style.background = "var(--interactive-accent)";
+        } else {
+          button.removeClass("active");
+          button.style.background = "var(--interactive-normal)";
+        }
+      });
+      this.updateToolControls();
+    }
+    this.updateBrushControlsUI();
+  }
+  updateBrushControlsUI() {
+    if (this.brushLockButton) {
+      this.brushLockButton.textContent = this.brushControlsLocked ? "\u{1F513}" : "\u{1F512}";
+      this.brushLockButton.title = this.brushControlsLocked ? "Unlock brush controls" : "Lock brush controls";
+    }
+    if (this.brushControlsContainer) {
+      this.brushControlsContainer.style.display = this.brushControlsLocked ? "none" : "";
+    }
+    const brushToolButton = this.containerEl.querySelector('[data-tool="brush"]');
+    if (brushToolButton) {
+      brushToolButton.disabled = this.brushControlsLocked;
+      brushToolButton.style.opacity = this.brushControlsLocked ? "0.5" : "1";
+      brushToolButton.title = this.brushControlsLocked ? "Locked: Unlock brush controls to use brush tool" : "Brush tool";
+    }
+    this.updateToolControls();
+  }
+  addMapControlsLockButton(section) {
+    const sectionParent = section.parentElement;
+    if (!sectionParent)
+      return;
+    const header = sectionParent.querySelector(".section-header");
+    if (!header)
+      return;
+    const mapLockBtn = header.createEl("button", {
+      text: this.mapControlsLocked ? "\u{1F513}" : "\u{1F512}",
+      cls: "lock-btn"
+    });
+    mapLockBtn.style.background = "none";
+    mapLockBtn.style.border = "none";
+    mapLockBtn.style.fontSize = "14px";
+    mapLockBtn.style.cursor = "pointer";
+    mapLockBtn.style.padding = "2px 6px";
+    mapLockBtn.style.color = "var(--text-muted)";
+    mapLockBtn.style.marginRight = "8px";
+    mapLockBtn.title = this.mapControlsLocked ? "Click to unlock map controls" : "Click to lock map controls (prevents accidental changes)";
+    mapLockBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.toggleMapControlsLock();
+    });
+    header.insertBefore(mapLockBtn, header.firstChild);
+    this.mapLockButton = mapLockBtn;
+  }
+  async generateTerrain() {
+    var _a, _b, _c;
+    console.log("\u{1F3AF} Generate Terrain button clicked");
+    console.log("\u{1F3AF} Session ID:", this.sessionId);
+    console.log("\u{1F3AF} Current seed:", this.currentSeed);
+    if (!this.sessionId) {
+      console.error("\u274C No session ID available");
+      new import_obsidian3.Notice("No active session");
+      return;
+    }
+    new import_obsidian3.Notice("Generating terrain... This may take a few moments");
+    try {
+      console.log("\u{1F3AF} Sending terrain generation request...");
+      const response = await this.plugin.apiClient.post("/api/master/generate_terrain", {
+        session_id: this.sessionId,
+        seed: this.currentSeed
+      });
+      console.log("\u{1F3AF} Server response:", response.data);
+      console.log("\u{1F3AF} Generated hexes sample:", response.data.hexes ? response.data.hexes.slice(0, 3) : "No hexes in response");
+      if (response.data.success) {
+        const { hex_count, seed } = response.data;
+        this.currentSeed = seed;
+        this.updateSeedDisplay();
+        new import_obsidian3.Notice(`Generated ${hex_count} hexes with seed ${seed}`);
+        await this.loadMapData();
+      } else {
+        throw new Error(response.data.error || "Generation failed");
+      }
+    } catch (error) {
+      console.error("\u274C Failed to generate terrain:", error);
+      console.error("\u274C Error details:", (_a = error.response) == null ? void 0 : _a.data);
+      new import_obsidian3.Notice("Failed to generate terrain: " + (((_c = (_b = error.response) == null ? void 0 : _b.data) == null ? void 0 : _c.error) || error.message));
+    }
+  }
+  showSetSeedModal() {
+    var _a;
+    const modal = document.createElement("div");
+    modal.className = "master-modal";
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    `;
+    const content = modal.createDiv("modal-content");
+    content.style.cssText = `
+      background: var(--background-primary);
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 8px;
+      padding: 20px;
+      min-width: 300px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    `;
+    content.createEl("h3", { text: "Set Seed" });
+    const input = content.createEl("input", {
+      type: "number",
+      placeholder: "Enter seed (1-999999)",
+      value: ((_a = this.currentSeed) == null ? void 0 : _a.toString()) || ""
+    });
+    input.style.cssText = `
+      width: 100%;
+      padding: 8px;
+      margin: 10px 0;
+      background: var(--background-secondary);
+      color: var(--text-normal);
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 4px;
+    `;
+    const buttons = content.createDiv("modal-buttons");
+    buttons.style.cssText = `
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+      justify-content: flex-end;
+    `;
+    const confirmBtn = buttons.createEl("button", { text: "Set Seed" });
+    confirmBtn.style.cssText = `
+      padding: 6px 12px;
+      background: var(--interactive-accent);
+      color: var(--text-on-accent);
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    `;
+    confirmBtn.addEventListener("click", async () => {
+      const seed = parseInt(input.value);
+      if (seed > 0 && seed < 1e6) {
+        this.currentSeed = seed;
+        this.updateSeedDisplay();
+        try {
+          await this.plugin.apiClient.post("/api/master/set_seed", {
+            session_id: this.sessionId,
+            seed
+          });
+          new import_obsidian3.Notice(`Seed set to ${seed}. Click Generate Terrain to use this seed.`);
+        } catch (error) {
+          console.error("Failed to set seed:", error);
+          new import_obsidian3.Notice("Failed to set seed");
+        }
+        modal.remove();
+      } else {
+        new import_obsidian3.Notice("Invalid seed value");
+      }
+    });
+    const cancelBtn = buttons.createEl("button", { text: "Cancel" });
+    cancelBtn.style.cssText = `
+      padding: 6px 12px;
+      background: var(--background-modifier-border);
+      color: var(--text-normal);
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    `;
+    cancelBtn.addEventListener("click", () => modal.remove());
+    document.body.appendChild(modal);
+    input.focus();
+  }
+  loadJsonMap() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.addEventListener("change", async (e) => {
+      var _a;
+      const file = (_a = e.target.files) == null ? void 0 : _a[0];
+      if (!file)
+        return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        await this.plugin.apiClient.post("/api/master/load_map", {
+          session_id: this.sessionId,
+          map_data: data
+        });
+        new import_obsidian3.Notice("Map loaded successfully");
+        await this.loadMapData();
+      } catch (error) {
+        console.error("Failed to load map:", error);
+        new import_obsidian3.Notice("Failed to load map file");
+      }
+    });
+    input.click();
+  }
+  showImageImportModal() {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
+    const modal = document.createElement("div");
+    modal.className = "image-import-modal";
+    modal.style.cssText = `
+      background: var(--background-primary);
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 8px;
+      width: 90%;
+      max-width: 1000px;
+      max-height: 90%;
+      overflow-y: auto;
+      padding: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    `;
+    const header = modal.createDiv();
+    header.style.cssText = `
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--background-modifier-border);
+      padding-bottom: 10px;
+    `;
+    header.createEl("h2", { text: "Import Image Map" });
+    const closeBtn = header.createEl("button", { text: "\xD7" });
+    closeBtn.style.cssText = `
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 0;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
+    closeBtn.onclick = () => overlay.remove();
+    const content = modal.createDiv();
+    content.style.cssText = `
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      min-height: 400px;
+    `;
+    const leftSide = content.createDiv();
+    this.createImageImportSettings(leftSide);
+    const rightSide = content.createDiv();
+    this.createImageImportPreviews(rightSide);
+    const footer = modal.createDiv();
+    footer.style.cssText = `
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+      padding-top: 10px;
+      border-top: 1px solid var(--background-modifier-border);
+    `;
+    const cancelBtn = footer.createEl("button", { text: "Cancel" });
+    cancelBtn.className = "mod-muted";
+    cancelBtn.onclick = () => overlay.remove();
+    const importBtn = footer.createEl("button", { text: "Import Map" });
+    importBtn.className = "mod-cta";
+    importBtn.onclick = () => this.confirmImageImport(overlay);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.onclick = (e) => {
+      if (e.target === overlay)
+        overlay.remove();
+    };
+  }
+  createImageImportSettings(container) {
+    const fileSection = container.createDiv();
+    fileSection.style.cssText = `margin-bottom: 20px;`;
+    const fileTitle = fileSection.createEl("h3", { text: "Select Image File" });
+    fileTitle.style.cssText = `margin-bottom: 10px; font-size: 16px;`;
+    const fileSelectionDiv = fileSection.createDiv();
+    fileSelectionDiv.style.cssText = `
+      border: 2px dashed var(--background-modifier-border);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 10px;
+    `;
+    const selectBtn = fileSelectionDiv.createEl("button", { text: "Choose Image File" });
+    selectBtn.className = "mod-cta";
+    selectBtn.style.cssText = `margin-bottom: 10px;`;
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = ".jpg,.jpeg,.png,.bmp,.tiff";
+    fileInput.style.display = "none";
+    fileSelectionDiv.appendChild(fileInput);
+    const fileName = fileSelectionDiv.createEl("p", { text: "No file selected" });
+    fileName.style.cssText = `color: var(--text-muted); margin: 0;`;
+    selectBtn.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => this.handleImageFileSelection(e, fileName);
+    const presetsSection = container.createDiv();
+    presetsSection.style.cssText = `margin-bottom: 20px;`;
+    const presetsTitle = presetsSection.createEl("h3", { text: "Quick Presets" });
+    presetsTitle.style.cssText = `margin-bottom: 10px; font-size: 16px;`;
+    const presetControls = presetsSection.createDiv();
+    presetControls.style.cssText = `display: flex; gap: 10px; align-items: center;`;
+    const presetSelect = presetControls.createEl("select");
+    presetSelect.style.cssText = `flex: 1;`;
+    presetSelect.innerHTML = `
+      <option value="default">Default (Blue = Water)</option>
+      <option value="ocean-as-plains">Ocean as Plains (Blue = Plains)</option>
+      <option value="inverted">Inverted (Swap Water/Land)</option>
+      <option value="desert-world">Desert World (All \u2192 Desert)</option>
+      <option value="forest-world">Forest World (All \u2192 Forest)</option>
+    `;
+    const applyPresetBtn = presetControls.createEl("button", { text: "Apply" });
+    applyPresetBtn.onclick = () => this.applyColorPreset(presetSelect.value, container);
+    this.createTerrainMappingControls(container);
+  }
+  createTerrainMappingControls(container) {
+    const mappingSection = container.createDiv();
+    mappingSection.style.cssText = `margin-bottom: 20px;`;
+    const mappingTitle = mappingSection.createEl("h3", { text: "Terrain Color Mapping" });
+    mappingTitle.style.cssText = `margin-bottom: 10px; font-size: 16px;`;
+    const terrainMappings = [
+      { name: "water", color: "rgb(70, 130, 180)", label: "Steel Blue" },
+      { name: "forest", color: "rgb(34, 139, 34)", label: "Forest Green" },
+      { name: "plains", color: "rgb(144, 238, 144)", label: "Light Green" },
+      { name: "mountains", color: "rgb(105, 105, 105)", label: "Dim Gray" },
+      { name: "desert", color: "rgb(244, 164, 96)", label: "Sandy Brown" },
+      { name: "hills", color: "rgb(143, 188, 143)", label: "Dark Sea Green" },
+      { name: "swamp", color: "rgb(85, 107, 47)", label: "Dark Olive Green" },
+      { name: "tundra", color: "rgb(240, 248, 255)", label: "Alice Blue" }
+    ];
+    terrainMappings.forEach((mapping) => {
+      const mappingItem = mappingSection.createDiv();
+      mappingItem.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+        padding: 8px;
+        border: 1px solid var(--background-modifier-border);
+        border-radius: 4px;
+      `;
+      const colorPreview = mappingItem.createDiv();
+      colorPreview.style.cssText = `
+        width: 20px;
+        height: 20px;
+        border-radius: 3px;
+        background-color: ${mapping.color};
+        border: 1px solid var(--background-modifier-border);
+      `;
+      const label = mappingItem.createEl("span", { text: `${mapping.label} maps to:` });
+      label.style.cssText = `flex: 1; font-size: 12px;`;
+      const select = mappingItem.createEl("select");
+      select.dataset.color = mapping.name;
+      select.className = "terrain-select";
+      select.innerHTML = `
+        <option value="water" ${mapping.name === "water" ? "selected" : ""}>Water</option>
+        <option value="plains" ${mapping.name === "plains" ? "selected" : ""}>Plains</option>
+        <option value="forest" ${mapping.name === "forest" ? "selected" : ""}>Forest</option>
+        <option value="mountains" ${mapping.name === "mountains" ? "selected" : ""}>Mountains</option>
+        <option value="desert" ${mapping.name === "desert" ? "selected" : ""}>Desert</option>
+        <option value="hills" ${mapping.name === "hills" ? "selected" : ""}>Hills</option>
+        <option value="swamp" ${mapping.name === "swamp" ? "selected" : ""}>Swamp</option>
+        <option value="tundra" ${mapping.name === "tundra" ? "selected" : ""}>Tundra</option>
+      `;
+      const toleranceContainer = mappingItem.createDiv();
+      toleranceContainer.style.cssText = `display: flex; align-items: center; gap: 5px;`;
+      const toleranceLabel = toleranceContainer.createEl("span", { text: "Tolerance:" });
+      toleranceLabel.style.cssText = `font-size: 11px; color: var(--text-muted);`;
+      const toleranceSlider = toleranceContainer.createEl("input");
+      toleranceSlider.type = "range";
+      toleranceSlider.min = "0";
+      toleranceSlider.max = "100";
+      toleranceSlider.value = "50";
+      toleranceSlider.dataset.color = mapping.name;
+      toleranceSlider.className = "tolerance-slider";
+      toleranceSlider.style.cssText = `width: 60px;`;
+      const toleranceValue = toleranceContainer.createEl("span", { text: "50" });
+      toleranceValue.className = "tolerance-value";
+      toleranceValue.style.cssText = `font-size: 11px; min-width: 20px;`;
+      toleranceSlider.oninput = () => {
+        toleranceValue.textContent = toleranceSlider.value;
+        this.updateTerrainPreview();
+      };
+      select.onchange = () => this.updateTerrainPreview();
+    });
+    const defaultSection = mappingSection.createDiv();
+    defaultSection.style.cssText = `
+      margin-top: 15px;
+      padding: 8px;
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 4px;
+      background: var(--background-secondary);
+    `;
+    const defaultLabel = defaultSection.createEl("label", { text: "Default terrain for unmatched colors:" });
+    defaultLabel.style.cssText = `display: block; margin-bottom: 5px; font-size: 12px;`;
+    const defaultSelect = defaultSection.createEl("select");
+    defaultSelect.id = "default-terrain";
+    defaultSelect.innerHTML = `
+      <option value="plains" selected>Plains</option>
+      <option value="water">Water</option>
+      <option value="forest">Forest</option>
+      <option value="mountains">Mountains</option>
+      <option value="desert">Desert</option>
+      <option value="hills">Hills</option>
+      <option value="swamp">Swamp</option>
+      <option value="tundra">Tundra</option>
+    `;
+    defaultSelect.onchange = () => this.updateTerrainPreview();
+  }
+  createImageImportPreviews(container) {
+    const imageSection = container.createDiv();
+    imageSection.style.cssText = `margin-bottom: 20px;`;
+    const imageTitle = imageSection.createEl("h3", { text: "Image Preview" });
+    imageTitle.style.cssText = `margin-bottom: 10px; font-size: 16px;`;
+    const imagePreview = imageSection.createDiv();
+    imagePreview.id = "image-preview";
+    imagePreview.style.cssText = `
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 4px;
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--background-secondary);
+      color: var(--text-muted);
+    `;
+    imagePreview.textContent = "Select an image to see preview";
+    const terrainSection = container.createDiv();
+    const terrainTitle = terrainSection.createEl("h3", { text: "Terrain Preview" });
+    terrainTitle.style.cssText = `margin-bottom: 10px; font-size: 16px;`;
+    const terrainPreview = terrainSection.createDiv();
+    terrainPreview.id = "terrain-preview";
+    terrainPreview.style.cssText = `
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 4px;
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--background-secondary);
+      color: var(--text-muted);
+    `;
+    terrainPreview.textContent = "Terrain mapping will appear here";
+  }
+  handleImageFileSelection(event, fileNameElement) {
+    var _a;
+    const target = event.target;
+    const file = (_a = target.files) == null ? void 0 : _a[0];
+    if (!file) {
+      fileNameElement.textContent = "No file selected";
+      this.selectedImageFile = null;
+      return;
+    }
+    this.selectedImageFile = file;
+    fileNameElement.textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      var _a2;
+      const img = document.createElement("img");
+      img.src = (_a2 = e.target) == null ? void 0 : _a2.result;
+      img.style.cssText = `
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+      `;
+      const imagePreview = document.getElementById("image-preview");
+      if (imagePreview) {
+        imagePreview.innerHTML = "";
+        imagePreview.appendChild(img);
+      }
+      this.updateTerrainPreview();
+    };
+    reader.readAsDataURL(file);
+  }
+  applyColorPreset(preset, container) {
+    const terrainSelects = container.querySelectorAll(".terrain-select");
+    const defaultSelect = container.querySelector("#default-terrain");
+    switch (preset) {
+      case "ocean-as-plains":
+        terrainSelects.forEach((select) => {
+          if (select.dataset.color === "water")
+            select.value = "plains";
+        });
+        break;
+      case "inverted":
+        terrainSelects.forEach((select) => {
+          if (select.dataset.color === "water")
+            select.value = "plains";
+          else if (select.dataset.color === "plains")
+            select.value = "water";
+        });
+        break;
+      case "desert-world":
+        terrainSelects.forEach((select) => select.value = "desert");
+        if (defaultSelect)
+          defaultSelect.value = "desert";
+        break;
+      case "forest-world":
+        terrainSelects.forEach((select) => select.value = "forest");
+        if (defaultSelect)
+          defaultSelect.value = "forest";
+        break;
+      default:
+        terrainSelects.forEach((select) => {
+          const terrain = select.dataset.color;
+          if (terrain)
+            select.value = terrain;
+        });
+        if (defaultSelect)
+          defaultSelect.value = "plains";
+        break;
+    }
+    this.updateTerrainPreview();
+  }
+  updateTerrainPreview() {
+    if (!this.selectedImageFile)
+      return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      var _a;
+      const img = new Image();
+      img.onload = () => {
+        try {
+          this.generateTerrainPreview(img);
+        } catch (error) {
+          console.error("Error generating preview:", error);
+          const terrainPreview = document.getElementById("terrain-preview");
+          if (terrainPreview) {
+            terrainPreview.textContent = "Error generating preview";
+          }
+        }
+      };
+      img.src = (_a = e.target) == null ? void 0 : _a.result;
+    };
+    reader.readAsDataURL(this.selectedImageFile);
+  }
+  generateTerrainPreview(img) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx)
+      return;
+    const maxSize = 200;
+    const scale = Math.min(maxSize / img.width, maxSize / img.height);
+    canvas.width = Math.floor(img.width * scale);
+    canvas.height = Math.floor(img.height * scale);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const terrainMappings = {};
+    const tolerances = {};
+    document.querySelectorAll(".terrain-select").forEach((select) => {
+      const htmlSelect = select;
+      const colorKey = htmlSelect.getAttribute("data-color");
+      if (colorKey) {
+        terrainMappings[colorKey] = htmlSelect.value;
+      }
+    });
+    document.querySelectorAll(".tolerance-slider").forEach((slider) => {
+      const htmlSlider = slider;
+      const colorKey = htmlSlider.getAttribute("data-color");
+      if (colorKey) {
+        tolerances[colorKey] = parseInt(htmlSlider.value);
+      }
+    });
+    const defaultTerrainSelect = document.getElementById("default-terrain");
+    const defaultTerrain = (defaultTerrainSelect == null ? void 0 : defaultTerrainSelect.value) || "plains";
+    const colorPatterns = [
+      { name: "water", r: 70, g: 130, b: 180, maps_to: terrainMappings.water, tolerance: tolerances.water || 50 },
+      { name: "forest", r: 34, g: 139, b: 34, maps_to: terrainMappings.forest, tolerance: tolerances.forest || 50 },
+      { name: "plains", r: 144, g: 238, b: 144, maps_to: terrainMappings.plains, tolerance: tolerances.plains || 50 },
+      { name: "mountains", r: 105, g: 105, b: 105, maps_to: terrainMappings.mountains, tolerance: tolerances.mountains || 50 },
+      { name: "desert", r: 244, g: 164, b: 96, maps_to: terrainMappings.desert, tolerance: tolerances.desert || 50 },
+      { name: "hills", r: 143, g: 188, b: 143, maps_to: terrainMappings.hills, tolerance: tolerances.hills || 50 },
+      { name: "swamp", r: 85, g: 107, b: 47, maps_to: terrainMappings.swamp, tolerance: tolerances.swamp || 50 },
+      { name: "tundra", r: 240, g: 248, b: 255, maps_to: terrainMappings.tundra, tolerance: tolerances.tundra || 50 }
+    ];
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+      let terrain = defaultTerrain;
+      let bestMatch = Number.MAX_VALUE;
+      for (const pattern of colorPatterns) {
+        const distance = Math.sqrt(Math.pow(r - pattern.r, 2) + Math.pow(g - pattern.g, 2) + Math.pow(b - pattern.b, 2));
+        const toleranceThreshold = pattern.tolerance / 100 * 255;
+        if (distance <= toleranceThreshold && distance < bestMatch) {
+          bestMatch = distance;
+          terrain = pattern.maps_to;
+        }
+      }
+      const terrainColor = this.getTerrainColor(terrain);
+      pixels[i] = terrainColor.r;
+      pixels[i + 1] = terrainColor.g;
+      pixels[i + 2] = terrainColor.b;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    const dataUrl = canvas.toDataURL();
+    const previewImg = document.createElement("img");
+    previewImg.src = dataUrl;
+    previewImg.style.cssText = `
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: block;
+      border: 1px solid var(--background-modifier-border);
+    `;
+    const terrainPreview = document.getElementById("terrain-preview");
+    if (terrainPreview) {
+      terrainPreview.innerHTML = "";
+      terrainPreview.appendChild(previewImg);
+      const indicator = document.createElement("p");
+      indicator.textContent = `Preview: ${canvas.width}\xD7${canvas.height} pixels`;
+      indicator.style.cssText = `
+        font-size: 11px;
+        color: var(--text-muted);
+        text-align: center;
+        margin: 5px 0 0 0;
+      `;
+      terrainPreview.appendChild(indicator);
+    }
+  }
+  getTerrainColor(terrain) {
+    const colors = {
+      water: { r: 70, g: 130, b: 180 },
+      forest: { r: 34, g: 139, b: 34 },
+      plains: { r: 144, g: 238, b: 144 },
+      mountains: { r: 105, g: 105, b: 105 },
+      desert: { r: 244, g: 164, b: 96 },
+      hills: { r: 143, g: 188, b: 143 },
+      swamp: { r: 85, g: 107, b: 47 },
+      tundra: { r: 240, g: 248, b: 255 }
+    };
+    return colors[terrain] || colors.plains;
+  }
+  confirmImageImport(overlay) {
+    if (!this.selectedImageFile) {
+      new import_obsidian3.Notice("Please select an image file first");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      var _a;
+      const img = new Image();
+      img.onload = () => {
+        try {
+          this.convertImageToHexMap(img);
+          overlay.remove();
+          new import_obsidian3.Notice("Image successfully imported as hex map");
+        } catch (error) {
+          console.error("Error processing image:", error);
+          new import_obsidian3.Notice("Error processing image: " + error.message);
+        }
+      };
+      img.onerror = () => {
+        new import_obsidian3.Notice("Error loading image file");
+      };
+      img.src = (_a = e.target) == null ? void 0 : _a.result;
+    };
+    reader.readAsDataURL(this.selectedImageFile);
+  }
+  convertImageToHexMap(img) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx)
+      throw new Error("Could not get canvas context");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+    this.mapData = [];
+    const defaultTerrainSelect = document.getElementById("default-terrain");
+    const defaultTerrain = (defaultTerrainSelect == null ? void 0 : defaultTerrainSelect.value) || "plains";
+    const terrainMappings = {};
+    const tolerances = {};
+    document.querySelectorAll(".terrain-select").forEach((select) => {
+      const htmlSelect = select;
+      const colorKey = htmlSelect.getAttribute("data-color");
+      if (colorKey) {
+        terrainMappings[colorKey] = htmlSelect.value;
+      }
+    });
+    document.querySelectorAll(".tolerance-slider").forEach((slider) => {
+      const htmlSlider = slider;
+      const colorKey = htmlSlider.getAttribute("data-color");
+      if (colorKey) {
+        tolerances[colorKey] = parseInt(htmlSlider.value);
+      }
+    });
+    const colorPatterns = [
+      { name: "water", r: 70, g: 130, b: 180, maps_to: terrainMappings.water, tolerance: tolerances.water || 50 },
+      { name: "forest", r: 34, g: 139, b: 34, maps_to: terrainMappings.forest, tolerance: tolerances.forest || 50 },
+      { name: "plains", r: 144, g: 238, b: 144, maps_to: terrainMappings.plains, tolerance: tolerances.plains || 50 },
+      { name: "mountains", r: 105, g: 105, b: 105, maps_to: terrainMappings.mountains, tolerance: tolerances.mountains || 50 },
+      { name: "desert", r: 244, g: 164, b: 96, maps_to: terrainMappings.desert, tolerance: tolerances.desert || 50 },
+      { name: "hills", r: 143, g: 188, b: 143, maps_to: terrainMappings.hills, tolerance: tolerances.hills || 50 },
+      { name: "swamp", r: 85, g: 107, b: 47, maps_to: terrainMappings.swamp, tolerance: tolerances.swamp || 50 },
+      { name: "tundra", r: 240, g: 248, b: 255, maps_to: terrainMappings.tundra, tolerance: tolerances.tundra || 50 }
+    ];
+    const hexSize = 10;
+    const hexesWide = Math.floor(canvas.width / hexSize);
+    const hexesTall = Math.floor(canvas.height / hexSize);
+    for (let hexY = 0; hexY < hexesTall; hexY++) {
+      for (let hexX = 0; hexX < hexesWide; hexX++) {
+        const pixelX = Math.floor(hexX * hexSize + hexSize / 2);
+        const pixelY = Math.floor(hexY * hexSize + hexSize / 2);
+        const pixelIndex = (pixelY * canvas.width + pixelX) * 4;
+        const r = pixels[pixelIndex];
+        const g = pixels[pixelIndex + 1];
+        const b = pixels[pixelIndex + 2];
+        let terrain = defaultTerrain;
+        let bestMatch = Number.MAX_VALUE;
+        for (const pattern of colorPatterns) {
+          const distance = Math.sqrt(Math.pow(r - pattern.r, 2) + Math.pow(g - pattern.g, 2) + Math.pow(b - pattern.b, 2));
+          const toleranceThreshold = pattern.tolerance / 100 * 255;
+          if (distance <= toleranceThreshold && distance < bestMatch) {
+            bestMatch = distance;
+            terrain = pattern.maps_to;
+          }
+        }
+        const q = hexX;
+        const hexR = hexY;
+        const s = -(q + hexR);
+        const hex = {
+          q,
+          r: hexR,
+          s,
+          x: hexX,
+          y: hexY,
+          terrain,
+          modified: true
+        };
+        this.mapData.push(hex);
+      }
+    }
+    this.scheduleMapSave();
+    this.updateHexMapDisplay();
+  }
+  async saveAsJson() {
+    if (this.mapData.length === 0) {
+      new import_obsidian3.Notice("No map data to save");
+      return;
+    }
+    const data = {
+      seed: this.currentSeed,
+      hexes: this.mapData,
+      timestamp: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url2 = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url2;
+    a.download = `hexmap_${this.currentSeed}_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url2);
+    new import_obsidian3.Notice("Map saved as JSON");
+  }
+  async copyToGame() {
+    if (!this.sessionId)
+      return;
+    try {
+      await this.plugin.apiClient.post("/api/master/copy_to_game", {
+        session_id: this.sessionId
+      });
+      new import_obsidian3.Notice("Map copied to game sessions");
+    } catch (error) {
+      console.error("Failed to copy map:", error);
+      new import_obsidian3.Notice("Failed to copy map to game");
+    }
+  }
+  takeScreenshot() {
+    const tempCanvas = document.createElement("canvas");
+    const tempCtx = tempCanvas.getContext("2d");
+    const hexSize = 30;
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    this.mapData.forEach((hex) => {
+      const x = hexSize * (3 / 2 * hex.q);
+      const y = hexSize * (Math.sqrt(3) / 2 * hex.q + Math.sqrt(3) * hex.r);
+      minX = Math.min(minX, x - hexSize);
+      minY = Math.min(minY, y - hexSize);
+      maxX = Math.max(maxX, x + hexSize);
+      maxY = Math.max(maxY, y + hexSize);
+    });
+    const padding = 50;
+    tempCanvas.width = maxX - minX + padding * 2;
+    tempCanvas.height = maxY - minY + padding * 2;
+    tempCtx.fillStyle = "#FFFFFF";
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    tempCtx.save();
+    tempCtx.translate(padding - minX, padding - minY);
+    this.mapData.forEach((hex) => {
+      const x = hexSize * (3 / 2 * hex.q);
+      const y = hexSize * (Math.sqrt(3) / 2 * hex.q + Math.sqrt(3) * hex.r);
+      const terrain = TERRAIN_TYPES.find((t) => t.name === hex.terrain);
+      const color = (terrain == null ? void 0 : terrain.color) || "#888888";
+      this.drawHexOnContext(tempCtx, x, y, hexSize, color);
+    });
+    tempCtx.restore();
+    tempCanvas.toBlob((blob) => {
+      if (!blob)
+        return;
+      const url2 = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url2;
+      a.download = `hexmap_${this.currentSeed}_${Date.now()}.png`;
+      a.click();
+      URL.revokeObjectURL(url2);
+      new import_obsidian3.Notice("Screenshot saved");
+    });
+  }
+  drawHexOnContext(ctx, x, y, size, color) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = Math.PI / 3 * i;
+      const px = x + size * Math.cos(angle);
+      const py = y + size * Math.sin(angle);
+      if (i === 0) {
+        ctx.moveTo(px, py);
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = "#333333";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  startUpdateLoop() {
+    if (this.updateInterval) {
+      return;
+    }
+    this.updateInterval = window.setInterval(() => {
+      this.loadMovementRequests();
+      this.loadPlayers();
+    }, 5e3);
+  }
+  stopUpdateLoop() {
+    if (this.updateInterval) {
+      window.clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+  }
+  startAutoRefresh() {
+    this.stopAutoRefresh();
+    if (!this.sessionId) {
+      console.log("Auto-refresh skipped: no active master session");
+      return;
+    }
+    const frequency = 5e3;
+    this.autoRefreshInterval = window.setInterval(async () => {
+      try {
+        console.log("\u{1F504} Auto-refreshing movement requests and players...");
+        const refreshPromises = [
+          this.loadMovementRequests(),
+          this.loadPlayers()
+        ];
+        await Promise.all(refreshPromises);
+        if (this.hexMap && this.mapData.length > 0) {
+          this.refreshMapWithPlayers();
+        }
+      } catch (error) {
+        console.warn("Auto-refresh failed:", error);
+      }
+    }, frequency);
+    console.log(`\u23F0 Auto-refresh started for session ${this.sessionId} with 5s interval`);
+  }
+  stopAutoRefresh() {
+    if (this.autoRefreshInterval) {
+      clearInterval(this.autoRefreshInterval);
+      this.autoRefreshInterval = null;
+    }
+  }
+  updateActiveSession(newSessionId) {
+    if (this.sessionId === newSessionId) {
+      return;
+    }
+    console.log("Master View: switching session", this.sessionId, "->", newSessionId);
+    this.stopUpdateLoop();
+    this.stopAutoRefresh();
+    this.sessionId = newSessionId;
+    this.movementRequests = [];
+    this.players = [];
+    this.updateMovementQueue();
+    this.updatePlayerList();
+  }
+  async onClose() {
+    this.stopUpdateLoop();
+    this.stopAutoRefresh();
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      await this.saveMapChanges();
+    }
+    if (this.socketConnection) {
+    }
+  }
+};
+
 // src/types.ts
 var DEFAULT_SETTINGS = {
   serverUrl: "http://localhost:5000",
@@ -16006,7 +18677,8 @@ var DEFAULT_SETTINGS = {
   autoGenerateDescriptions: true,
   showHexGrid: true,
   rememberLogin: false,
-  autoLogin: false
+  autoLogin: false,
+  autoRefreshFrequency: 60
 };
 var ErrorCode;
 (function(ErrorCode2) {
@@ -16031,7 +18703,7 @@ var ErrorCode;
 })(ErrorCode || (ErrorCode = {}));
 
 // src/main.ts
-var HexcrawlPlugin = class extends import_obsidian3.Plugin {
+var HexcrawlPlugin = class extends import_obsidian4.Plugin {
   constructor() {
     super(...arguments);
     this.currentSessionId = null;
@@ -16049,6 +18721,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
       this.initializeApiClient();
       this.registerView(VIEW_TYPE_HEXCRAWL, (leaf) => new HexcrawlView(leaf, this));
       this.registerView(VIEW_TYPE_AUTH, (leaf) => new AuthView(leaf, this));
+      this.registerView(VIEW_TYPE_MASTER, (leaf) => new MasterView(leaf, this));
       this.addRibbonIcon("user", "Hexcrawl Login", () => {
         this.activateAuthView();
       });
@@ -16056,8 +18729,19 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
         if (this.authState.isAuthenticated) {
           this.activateView();
         } else {
-          new import_obsidian3.Notice("Please login first");
+          new import_obsidian4.Notice("Please login first");
           this.activateAuthView();
+        }
+      });
+      this.addRibbonIcon("crown", "Hexcrawl Master", () => {
+        var _a;
+        if (this.authState.isAuthenticated && ((_a = this.authState.user) == null ? void 0 : _a.isGameMaster)) {
+          this.activateMasterView();
+        } else if (!this.authState.isAuthenticated) {
+          new import_obsidian4.Notice("Please login first");
+          this.activateAuthView();
+        } else {
+          new import_obsidian4.Notice("Master view is only available for Game Masters");
         }
       });
       this.addCommand({
@@ -16074,8 +18758,23 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
           if (this.authState.isAuthenticated) {
             this.activateView();
           } else {
-            new import_obsidian3.Notice("Please login first");
+            new import_obsidian4.Notice("Please login first");
             this.activateAuthView();
+          }
+        }
+      });
+      this.addCommand({
+        id: "open-hexcrawl-master",
+        name: "Open Hexcrawl Master View",
+        callback: () => {
+          var _a;
+          if (this.authState.isAuthenticated && ((_a = this.authState.user) == null ? void 0 : _a.isGameMaster)) {
+            this.activateMasterView();
+          } else if (!this.authState.isAuthenticated) {
+            new import_obsidian4.Notice("Please login first");
+            this.activateAuthView();
+          } else {
+            new import_obsidian4.Notice("Master view is only available for Game Masters");
           }
         }
       });
@@ -16093,9 +18792,9 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
           const textMapper = this.generateTextMapperNotation();
           if (textMapper) {
             await navigator.clipboard.writeText(textMapper);
-            new import_obsidian3.Notice("Text-mapper notation copied to clipboard!");
+            new import_obsidian4.Notice("Text-mapper notation copied to clipboard!");
           } else {
-            new import_obsidian3.Notice("No explored hexes to export.");
+            new import_obsidian4.Notice("No explored hexes to export.");
           }
         }
       });
@@ -16164,7 +18863,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
         "Content-Type": "application/json"
       },
       withCredentials: true,
-      timeout: 1e4
+      timeout: 3e4
     });
     if (existingToken) {
       this.apiClient.defaults.headers["Authorization"] = existingToken;
@@ -16227,6 +18926,22 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
       workspace.revealLeaf(leaf);
     }
   }
+  async activateMasterView() {
+    const { workspace } = this.app;
+    let leaf = null;
+    const leaves = workspace.getLeavesOfType(VIEW_TYPE_MASTER);
+    if (leaves.length > 0) {
+      leaf = leaves[0];
+    } else {
+      leaf = workspace.getRightLeaf(false);
+      if (leaf) {
+        await leaf.setViewState({ type: VIEW_TYPE_MASTER, active: true });
+      }
+    }
+    if (leaf) {
+      workspace.revealLeaf(leaf);
+    }
+  }
   async activateAuthView() {
     console.log("\u{1F510} Hexcrawl Plugin: Attempting to activate auth view...");
     const { workspace } = this.app;
@@ -16243,7 +18958,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
         await leaf.setViewState({ type: VIEW_TYPE_AUTH, active: true });
       } else {
         console.error("\u{1F510} Auth View: Failed to get main leaf");
-        new import_obsidian3.Notice("Failed to open authentication view");
+        new import_obsidian4.Notice("Failed to open authentication view");
         return;
       }
     }
@@ -16252,7 +18967,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
       workspace.revealLeaf(leaf);
     } else {
       console.error("\u{1F510} Auth View: No leaf to reveal");
-      new import_obsidian3.Notice("Failed to open authentication view");
+      new import_obsidian4.Notice("Failed to open authentication view");
     }
   }
   async loadSettings() {
@@ -16299,7 +19014,8 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
       if (response.data.user) {
         const user = {
           ...response.data.user,
-          playerColor: response.data.user.color || response.data.user.playerColor
+          playerColor: response.data.user.color || response.data.user.playerColor,
+          isGameMaster: response.data.user.role === "game_master"
         };
         const token = response.data.token;
         if (token) {
@@ -16312,7 +19028,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
           token
         };
         console.log("\u2705 Auto-login successful:", user.username);
-        new import_obsidian3.Notice(`Welcome back, ${user.username}!`);
+        new import_obsidian4.Notice(`Welcome back, ${user.username}!`);
       }
     } catch (error) {
       console.log("\u{1F512} No saved login found or session expired");
@@ -16330,7 +19046,8 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
       if (response.data.user) {
         const user = {
           ...response.data.user,
-          playerColor: response.data.user.color || response.data.user.playerColor
+          playerColor: response.data.user.color || response.data.user.playerColor,
+          isGameMaster: response.data.user.role === "game_master"
         };
         const token = response.data.token;
         if (token) {
@@ -16388,12 +19105,14 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
         username: registration.username,
         email: registration.email,
         password: registration.password,
-        color: registration.playerColor
+        color: registration.playerColor,
+        role: registration.role
       });
       if (response.data.user) {
         const user = {
           ...response.data.user,
-          playerColor: response.data.user.color || response.data.user.playerColor
+          playerColor: response.data.user.color || response.data.user.playerColor,
+          isGameMaster: response.data.user.role === "game_master"
         };
         const token = response.data.token;
         if (token) {
@@ -16471,7 +19190,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
   async createNewGame(mapName = "default", seed) {
     var _a, _b, _c;
     if (!this.authState.isAuthenticated) {
-      new import_obsidian3.Notice("Please login first");
+      new import_obsidian4.Notice("Please login first");
       this.activateAuthView();
       return;
     }
@@ -16485,17 +19204,17 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
         requestData.player_color = this.authState.user.playerColor;
       const response = await this.apiClient.post("/api/new_game", requestData);
       this.currentSessionId = response.data.session_id || response.headers["x-session-id"] || Math.random().toString().slice(2);
-      new import_obsidian3.Notice(`New game created! Session: ${this.currentSessionId}`);
+      new import_obsidian4.Notice(`New game created! Session: ${this.currentSessionId}`);
       console.log("\u{1F3AE} New session created:", this.currentSessionId);
       await this.loadMapData();
     } catch (error) {
       console.error("Failed to create new game:", error);
       if (((_c = error.response) == null ? void 0 : _c.status) === 401) {
-        new import_obsidian3.Notice("Session expired. Please login again.");
+        new import_obsidian4.Notice("Session expired. Please login again.");
         this.authState = { isAuthenticated: false, user: null };
         this.activateAuthView();
       } else {
-        new import_obsidian3.Notice("Failed to create new game. Check server connection.");
+        new import_obsidian4.Notice("Failed to create new game. Check server connection.");
       }
     }
   }
@@ -16541,7 +19260,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
     } catch (error) {
       console.error("\u274C Error loading map data:", error);
       if (((_a = error.response) == null ? void 0 : _a.status) === 401) {
-        new import_obsidian3.Notice("Session expired. Please login again.");
+        new import_obsidian4.Notice("Session expired. Please login again.");
         this.authState = { isAuthenticated: false, user: null };
       }
     }
@@ -16549,7 +19268,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
   async moveToHex(q, r, s) {
     var _a, _b, _c, _d;
     if (!this.authState.isAuthenticated) {
-      new import_obsidian3.Notice("Please login first");
+      new import_obsidian4.Notice("Please login first");
       return;
     }
     try {
@@ -16582,28 +19301,28 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
         } else {
           await this.loadMapData();
         }
-        new import_obsidian3.Notice(`Moved to hex (${q}, ${r})`);
+        new import_obsidian4.Notice(`Moved to hex (${q}, ${r})`);
       } else {
-        new import_obsidian3.Notice(response.data.error || "Cannot move to that hex");
+        new import_obsidian4.Notice(response.data.error || "Cannot move to that hex");
       }
     } catch (error) {
       console.error("Failed to move player:", error);
       if (((_d = error.response) == null ? void 0 : _d.status) === 401) {
-        new import_obsidian3.Notice("Session expired. Please login again.");
+        new import_obsidian4.Notice("Session expired. Please login again.");
         this.authState = { isAuthenticated: false, user: null };
       } else {
-        new import_obsidian3.Notice("Failed to move. Check server connection.");
+        new import_obsidian4.Notice("Failed to move. Check server connection.");
       }
     }
   }
   async movePlayer(direction) {
     var _a, _b;
     if (!this.authState.isAuthenticated) {
-      new import_obsidian3.Notice("Please login first");
+      new import_obsidian4.Notice("Please login first");
       return;
     }
     if (!((_a = this.mapData) == null ? void 0 : _a.player_position)) {
-      new import_obsidian3.Notice("No player position available");
+      new import_obsidian4.Notice("No player position available");
       return;
     }
     try {
@@ -16620,7 +19339,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
       };
       const offset = directionOffsets[direction];
       if (!offset) {
-        new import_obsidian3.Notice(`Invalid direction: ${direction}`);
+        new import_obsidian4.Notice(`Invalid direction: ${direction}`);
         return;
       }
       const targetQ = currentQ + offset.q;
@@ -16633,9 +19352,9 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
       });
       if (response.data.success) {
         await this.loadMapData();
-        new import_obsidian3.Notice(`Moved ${direction}`);
+        new import_obsidian4.Notice(`Moved ${direction}`);
       } else {
-        new import_obsidian3.Notice(response.data.message || "Cannot move in that direction");
+        new import_obsidian4.Notice(response.data.message || "Cannot move in that direction");
       }
     } catch (error) {
       console.error("Failed to move player:", error);
@@ -16643,7 +19362,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
         this.authState = { isAuthenticated: false, user: null };
         this.activateAuthView();
       } else {
-        new import_obsidian3.Notice("Failed to move player");
+        new import_obsidian4.Notice("Failed to move player");
       }
     }
   }
@@ -16667,7 +19386,7 @@ var HexcrawlPlugin = class extends import_obsidian3.Plugin {
       if (((_a = error.response) == null ? void 0 : _a.status) === 401) {
         this.authState = { isAuthenticated: false, user: null };
       }
-      new import_obsidian3.Notice("Failed to generate hex description");
+      new import_obsidian4.Notice("Failed to generate hex description");
       return "";
     }
   }
@@ -16746,17 +19465,17 @@ ${hexLabels.join("\n")}`;
   }
   async syncCurrentHexToNote() {
     if (!this.mapData) {
-      new import_obsidian3.Notice("No map data available. Please load a game first.");
+      new import_obsidian4.Notice("No map data available. Please load a game first.");
       return;
     }
     const currentHex = this.mapData.player_position;
     if (!currentHex) {
-      new import_obsidian3.Notice("No current hex position");
+      new import_obsidian4.Notice("No current hex position");
       return;
     }
     const hexData = this.mapData.hexes.find((h) => h.x === currentHex.x && h.y === currentHex.y);
     if (!hexData) {
-      new import_obsidian3.Notice("Current hex data not found");
+      new import_obsidian4.Notice("Current hex data not found");
       return;
     }
     await this.createOrUpdateHexNote(hexData);
@@ -16764,7 +19483,7 @@ ${hexLabels.join("\n")}`;
   async createOrUpdateHexNote(hex) {
     const folderPath = this.settings.hexNotesFolder;
     const fileName = `Hex ${hex.x}-${hex.y} - ${hex.terrain || "Unknown"}.md`;
-    const filePath = (0, import_obsidian3.normalizePath)(`${folderPath}/${fileName}`);
+    const filePath = (0, import_obsidian4.normalizePath)(`${folderPath}/${fileName}`);
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
     if (!folder) {
       await this.app.vault.createFolder(folderPath);
@@ -16775,12 +19494,12 @@ ${hexLabels.join("\n")}`;
     }
     const content = this.generateHexNoteContent(hex, description);
     const file = this.app.vault.getAbstractFileByPath(filePath);
-    if (file instanceof import_obsidian3.TFile) {
+    if (file instanceof import_obsidian4.TFile) {
       await this.app.vault.modify(file, content);
-      new import_obsidian3.Notice(`Updated: ${fileName}`);
+      new import_obsidian4.Notice(`Updated: ${fileName}`);
     } else {
       await this.app.vault.create(filePath, content);
-      new import_obsidian3.Notice(`Created: ${fileName}`);
+      new import_obsidian4.Notice(`Created: ${fileName}`);
     }
   }
   generateHexNoteContent(hex, description) {
@@ -16853,7 +19572,7 @@ Check the developer console for detailed logs with \u{1F680}\u{1F527}\u{1F5FA}\u
 4. Copy any red error messages or messages with Hexcrawl emoji prefixes
 `;
     await navigator.clipboard.writeText(debugText);
-    new import_obsidian3.Notice("Debug info copied to clipboard!");
+    new import_obsidian4.Notice("Debug info copied to clipboard!");
     console.log("\u{1F4CB} Debug info copied:", debugInfo);
   }
   async testCorsConnection() {
@@ -16862,18 +19581,18 @@ Check the developer console for detailed logs with \u{1F680}\u{1F527}\u{1F5FA}\u
     try {
       const response = await this.apiClient.get("/api/auth/cors-test");
       console.log("\u2705 CORS test successful:", response.data);
-      new import_obsidian3.Notice("\u2705 CORS test successful - Check console for details");
+      new import_obsidian4.Notice("\u2705 CORS test successful - Check console for details");
     } catch (error) {
       console.error("\u274C CORS test failed:", error);
       if (error.code === "ERR_NETWORK") {
-        new import_obsidian3.Notice("\u274C CORS test failed - Network/CORS error");
+        new import_obsidian4.Notice("\u274C CORS test failed - Network/CORS error");
       } else {
-        new import_obsidian3.Notice(`\u274C CORS test failed - ${((_a = error.response) == null ? void 0 : _a.status) || "Unknown error"}`);
+        new import_obsidian4.Notice(`\u274C CORS test failed - ${((_a = error.response) == null ? void 0 : _a.status) || "Unknown error"}`);
       }
     }
   }
 };
-var HexcrawlSettingTab = class extends import_obsidian3.PluginSettingTab {
+var HexcrawlSettingTab = class extends import_obsidian4.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -16892,39 +19611,46 @@ var HexcrawlSettingTab = class extends import_obsidian3.PluginSettingTab {
       cls: "setting-item-description"
     });
     containerEl.createEl("h3", { text: "Server Configuration" });
-    new import_obsidian3.Setting(containerEl).setName("Server URL").setDesc("URL of your Hexcrawl Flask server").addText((text) => text.setPlaceholder("http://localhost:5000").setValue(this.plugin.settings.serverUrl).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName("Server URL").setDesc("URL of your Hexcrawl Flask server").addText((text) => text.setPlaceholder("http://localhost:5000").setValue(this.plugin.settings.serverUrl).onChange(async (value) => {
       this.plugin.settings.serverUrl = value;
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h3", { text: "Map Configuration" });
-    new import_obsidian3.Setting(containerEl).setName("Hex Notes Folder").setDesc("Folder where hex location notes will be created").addText((text) => text.setPlaceholder("Hexcrawl/Locations").setValue(this.plugin.settings.hexNotesFolder).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName("Hex Notes Folder").setDesc("Folder where hex location notes will be created").addText((text) => text.setPlaceholder("Hexcrawl/Locations").setValue(this.plugin.settings.hexNotesFolder).onChange(async (value) => {
       this.plugin.settings.hexNotesFolder = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName("Auto-generate Descriptions").setDesc("Automatically generate AI descriptions for new hexes").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoGenerateDescriptions).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName("Auto-generate Descriptions").setDesc("Automatically generate AI descriptions for new hexes").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoGenerateDescriptions).onChange(async (value) => {
       this.plugin.settings.autoGenerateDescriptions = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName("Show Hex Grid").setDesc("Display hex grid overlay on the map").addToggle((toggle) => toggle.setValue(this.plugin.settings.showHexGrid).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName("Show Hex Grid").setDesc("Display hex grid overlay on the map").addToggle((toggle) => toggle.setValue(this.plugin.settings.showHexGrid).onChange(async (value) => {
       this.plugin.settings.showHexGrid = value;
       await this.plugin.saveSettings();
     }));
+    new import_obsidian4.Setting(containerEl).setName("Auto-refresh Frequency").setDesc("How often to automatically refresh movement requests and players (in seconds, minimum 15)").addText((text) => text.setPlaceholder("60").setValue(this.plugin.settings.autoRefreshFrequency.toString()).onChange(async (value) => {
+      const numValue = parseInt(value);
+      if (!isNaN(numValue) && numValue >= 15) {
+        this.plugin.settings.autoRefreshFrequency = numValue;
+        await this.plugin.saveSettings();
+      }
+    }));
     containerEl.createEl("h3", { text: "Login Preferences" });
-    new import_obsidian3.Setting(containerEl).setName("Auto-login").setDesc("Automatically login when Obsidian starts (saves session cookies)").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoLogin).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName("Auto-login").setDesc("Automatically login when Obsidian starts (saves session cookies)").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoLogin).onChange(async (value) => {
       this.plugin.settings.autoLogin = value;
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h3", { text: "Connection Test" });
-    new import_obsidian3.Setting(containerEl).setName("Test Server Connection").setDesc("Verify connection to the hexcrawl server").addButton((button) => button.setButtonText("Test Connection").onClick(async () => {
+    new import_obsidian4.Setting(containerEl).setName("Test Server Connection").setDesc("Verify connection to the hexcrawl server").addButton((button) => button.setButtonText("Test Connection").onClick(async () => {
       await this.testConnection();
     }));
   }
   async testConnection() {
     const isConnected = await this.plugin.testServerConnection();
     if (isConnected) {
-      new import_obsidian3.Notice("\u2705 Connection successful!");
+      new import_obsidian4.Notice("\u2705 Connection successful!");
     } else {
-      new import_obsidian3.Notice("\u274C Connection failed. Check server URL and ensure server is running.");
+      new import_obsidian4.Notice("\u274C Connection failed. Check server URL and ensure server is running.");
     }
   }
 };
