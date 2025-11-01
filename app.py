@@ -568,15 +568,15 @@ def get_player_positions(session_id):
     """Get all player positions for a map session"""
     player_positions = []
 
-    print(f"🔍 get_player_positions called for session: {session_id}")
+    print(f"[GET_PLAYERS] Called for session: {session_id}")
 
     # Check if this is a master session
     if session_id in map_sessions:
         master_session = map_sessions[session_id]
         # Extract seed from master session to find players
         master_seed = master_session.get('seed')
-        print(f"🔍 Master session found - seed: {master_seed}")
-        print(f"🔍 Searching for players with matching seed in {len(games)} game sessions...")
+        print(f"[GET_PLAYERS] Master session found - seed: {master_seed}")
+        print(f"[GET_PLAYERS] Searching for players with matching seed in {len(games)} game sessions...")
 
         # For master sessions, find players who joined with the same seed
         for game_id, game_data in games.items():
@@ -594,9 +594,9 @@ def get_player_positions(session_id):
                         'color': game_data.player_color
                     }
                     player_positions.append(player_data)
-                    print(f"    ✅ MATCH! Added player: {game_data.player_name} at position {current_pos}")
+                    print(f"    [MATCH] Added player: {game_data.player_name} at position {current_pos}")
                 else:
-                    print(f"    ❌ No match - seed {game_data.seed} != {master_seed}")
+                    print(f"    [NO_MATCH] seed {game_data.seed} != {master_seed}")
     else:
         # Original logic for non-master sessions
         # Find all game sessions with players
@@ -621,7 +621,7 @@ def get_player_positions(session_id):
                             })
                             break
 
-    print(f"🔍 Returning {len(player_positions)} players for session {session_id}")
+    print(f"[GET_PLAYERS] Returning {len(player_positions)} players for session {session_id}")
     if player_positions:
         for p in player_positions:
             print(f"  - {p['name']} at ({p['q']}, {p['r']}, {p['s']})")
@@ -1029,7 +1029,7 @@ def new_game():
         session_id = session.get('session_id', str(random.randint(1000000, 9999999)))
         session['session_id'] = session_id
 
-        print(f"🎮 Creating new game - seed: {seed}, player: {player_name}, color: {player_color}, session: {session_id}")
+        print(f"[NEW_GAME] Creating game - seed: {seed}, player: {player_name}, color: {player_color}, session: {session_id}")
         
         # Check if there's an existing map session with this seed
         existing_map_session = None
@@ -1053,7 +1053,7 @@ def new_game():
         
         # Create new game session with streaming exploration
         game = WebGameSession(session_id, seed, player_name, player_color)
-        print(f"✅ WebGameSession created - session: {session_id}, final seed: {game.seed}, player: {player_name}")
+        print(f"[SUCCESS] WebGameSession created - session: {session_id}, final seed: {game.seed}, player: {player_name}")
         
         if existing_map_session:
             # Store reference to generator map data for on-demand loading
