@@ -23,6 +23,7 @@ This is a **sophisticated multi-client hexcrawl system** for tabletop RPG explor
 - **Minecraft-style biome generation** with 6D noise
 - **Export capabilities** (text-mapper, JSON, images)
 - **Campaign integration** via Obsidian notes
+- **Multiplayer support** with master/player sessions (see MULTIPLAYER_SYNC_BUGFIX.md for recent fixes)
 
 ## Critical Build Process - MUST FOLLOW
 
@@ -145,6 +146,25 @@ TypeScript    → Axios Client → Routes → HexMap/Gen → SQLite/JSON
 - **Coordinate Systems**: Mix of offset (x,y) and cube (q,r,s) - be consistent
 - **Build Process**: TypeScript changes invisible until `npm run build && npm run deploy`
 - **Multiple Generators**: 10+ generators with similar code - choose the right one
+- **Multiplayer Sync**: Remote players must join using "Join Master Session" feature with correct session ID (see MULTIPLAYER_SYNC_BUGFIX.md)
+
+## Troubleshooting Multiplayer Issues
+
+### Remote Players Not Appearing on Master Map
+
+**Symptoms**: Player joins session successfully, but doesn't appear on DM's master view map.
+
+**Solution**: This was a bug fixed in commit (2025-11-01). Ensure you have the latest version with:
+- Frontend fix: `authView.ts` correctly extracts seed from `masterResponse.data.seed`
+- Backend logging: Check server logs for seed mismatches
+
+**Debug Steps**:
+1. Check browser console for: `🎲 Extracted master seed: XXXXX`
+2. Check server logs for: `✅ WebGameSession created - session: XXX, final seed: XXXXX`
+3. When master view refreshes, check logs for: `🔍 Returning N players for session master_XXX`
+4. Verify seeds match between master session and player sessions
+
+**See**: `MULTIPLAYER_SYNC_BUGFIX.md` for full details on this issue and fix.
 
 ---
 
